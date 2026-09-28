@@ -122,6 +122,7 @@ func retakeRippleClips(_ clips:[VideoClip],cuts:[VideoCut])->[VideoClip] {
             return copy
         }
         edit.annotations=remappedAnnotations(annotations) { retakeRippleTime($0,cuts:cuts) }
+        invalidateSensitiveScan()
         edit.markers=remappedMarkers(markers) { retakeRippleTime($0,cuts:cuts) }
         edit.audioTracks=audioTracks.flatMap {track in
             keptVideoRanges(start:track.timelineStart,end:track.timelineStart+track.duration,cuts:cuts).enumerated().compactMap {index,range in

@@ -261,6 +261,7 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
             return copy
         }
         annotations=remappedAnnotations(annotations,moved)
+        invalidateSensitiveScan()
         markers=remappedMarkers(markers,moved)
         audioTracks=audioTracks.map { track in
             var copy=track;copy.timelineStart=moved(track.timelineStart);return copy
@@ -312,6 +313,7 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
             return copy
         }
         edit.annotations=remappedAnnotations(annotations,remap)
+        invalidateSensitiveScan()
         edit.markers=remappedMarkers(markers,remap)
         edit.audioTracks=audioTracks.map {var track=$0;if track.timelineStart>=oldEnd-0.000_5 {track.timelineStart+=newEnd-oldEnd};return track}
         player.pause();playing=false

@@ -148,8 +148,14 @@ struct QuickPanel: View {
                     }.buttonStyle(.plain).help("Canvas, file and frame rate for \(preset.id)")
                 }
             }.disabled(studio.source == nil)
-            Button { studio.startExport() } label: { Label("Export \(studio.stillImage == nil ? studio.exportSettings.resolvedFormat:"PNG")…",systemImage:"square.and.arrow.up") }
-                .disabled(studio.source == nil || studio.busy)
+            HStack(spacing:8) {
+                Button { studio.startExport() } label: { Label("Export \(studio.stillImage == nil ? studio.exportSettings.resolvedFormat:"PNG")…",systemImage:"square.and.arrow.up") }
+                    .disabled(studio.source == nil || studio.busy)
+                if studio.stillImage == nil {
+                    Button { Task { await studio.exportFrame() } } label: { Label("Thumbnail",systemImage:"photo") }
+                        .disabled(studio.duration <= 0 || studio.busy).help("Save the frame under the playhead as a PNG")
+                }
+            }
         }
     }
     func presetSymbol(_ name:String)->String {

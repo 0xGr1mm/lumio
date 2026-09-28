@@ -87,6 +87,23 @@ import Foundation
     bar.previewTask?.cancel()
     lines.append("PASS the progress bar fills across the bottom as the video plays and leaves no trace when off")
 
+    // The thumbnail: the frame under the playhead, at the export size, with everything the video would carry.
+    let thumb=Studio();thumb.preferences.revealExport=false
+    await thumb.load(folder.appendingPathComponent("sample.mp4"))
+    thumb.look.exportHeight=720;thumb.look.aspect="16:9"
+    var thumbSticker=Annotation(kind:"Sticker",start:0,end:3);thumbSticker.text="🚀";thumbSticker.fontSize=200
+    thumb.annotations=[thumbSticker]
+    thumb.position=1.4
+    let thumbURL=folder.appendingPathComponent("verified-frame.png")
+    await thumb.exportFrame(to:thumbURL)
+    guard thumb.message==nil else { throw effectsFailure("saving the frame failed: \(thumb.message!)") }
+    guard let saved=NSImage(contentsOf:thumbURL),saved.size.width>0 else { throw effectsFailure("no PNG was written") }
+    guard let savedFrame=saved.cgImage(forProposedRect:nil,context:nil,hints:nil),savedFrame.width==1280,savedFrame.height==720 else {
+        throw effectsFailure("the frame was not written at the export size: \(saved.size)") }
+    guard thumb.lastExportURL==thumbURL,!thumb.busy else { throw effectsFailure("the frame export did not finish cleanly") }
+    thumb.previewTask?.cancel()
+    lines.append("PASS the frame under the playhead saves as a PNG at the export size")
+
     // Everything added here has to survive a saved project and an undo, or it is only a preview trick.
     let kept=Studio();kept.preferences.revealExport=false
     await kept.load(folder.appendingPathComponent("sample.mp4"))

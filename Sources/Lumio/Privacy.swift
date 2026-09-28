@@ -216,6 +216,13 @@ func overlapFraction(_ a:CGRect,_ b:CGRect)->Double {
     func hideEveryFind() {
         for find in privacyFinds where !find.hidden { hideFind(find.id) }
     }
+    /// A scan describes one timeline. Once ranges are cut out or a clip's speed changes, its moments point
+    /// somewhere else, and a block placed from a stale find would cover the wrong pixels — so the list is
+    /// dropped and the panel asks for a new scan. Blocks already placed are moved like any other annotation.
+    func invalidateSensitiveScan() {
+        guard !privacyFinds.isEmpty || privacyScanned else { return }
+        privacyFinds = []; privacyScanned = false
+    }
     /// A block the user places themselves, for anything the scan cannot read.
     func hideRegionAtPlayhead() { addAnnotation("Hide") }
 }

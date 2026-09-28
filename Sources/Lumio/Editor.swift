@@ -110,6 +110,11 @@ struct Editor: View {
                 }
                 Divider()
                 Button(studio.stillImage == nil ? "Export \(studio.exportSettings.resolvedFormat)…":"Export PNG…") { studio.startExport() }
+                if studio.stillImage == nil {
+                    Button("Save This Frame as PNG…") { Task { await studio.exportFrame() } }
+                        .disabled(studio.duration <= 0 || studio.busy)
+                        .help("The frame under the playhead, for a thumbnail or a post")
+                }
             } label: { Image(systemName:studio.busy ? "hourglass":"square.and.arrow.up").foregroundStyle(.black) }
                 .help(studio.busy ? "Processing":"Export").accessibilityLabel("Export").menuStyle(.borderlessButton).buttonStyle(.borderedProminent).disabled(studio.source == nil || studio.busy)
         }.buttonStyle(.bordered).controlSize(.small).font(.system(size:12)).padding(.horizontal,18).padding(.vertical,12).background(panel)

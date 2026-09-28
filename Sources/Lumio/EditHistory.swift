@@ -21,6 +21,8 @@ struct EditSnapshot:Codable,Equatable {
         restoringUntil=Date().addingTimeInterval(0.4)
         // Older snapshots have no camera offset; keep the current one when they point at the same camera file.
         let offset=s.camera == nil ? nil:(s.cameraOffset ?? (s.camera == cameraPath ? cameraOffset:nil))
+        // Going back to a different timeline puts a scan's moments somewhere else, so its list is dropped.
+        if s.clips != videoClips { invalidateSensitiveScan() }
         retakes=s.retakes ?? retakes.map { var copy=$0;copy.choice=nil;return copy };look=s.look;motion=s.motion;zooms=s.zooms;cameraPath=s.camera;cameraOffset=offset;videoClips=s.clips;captions=s.captions;captionStyle=s.captionStyle;audioTracks=s.audioTracks;audioSettings=s.audioSettings;keyboardStyle=s.keyboardStyle;annotations=s.annotations ?? [];markers=s.markers ?? []
         if !videoClips.contains(where:{$0.id==selectedClip}){selectedClip=videoClips.first?.id};if !zooms.contains(where:{$0.id==selectedZoom}){selectedZoom=zooms.first?.id};if !captions.contains(where:{$0.id==selectedCaption}){selectedCaption=captions.first?.id};if !audioTracks.contains(where:{$0.id==selectedAudioTrack}){selectedAudioTrack=audioTracks.first?.id};if !annotations.contains(where:{$0.id==selectedAnnotation}){selectedAnnotation=nil};if !markers.contains(where:{$0.id==selectedMarker}){selectedMarker=nil}
         synchronizeVideoSequence(refresh:false,trimItems:false)

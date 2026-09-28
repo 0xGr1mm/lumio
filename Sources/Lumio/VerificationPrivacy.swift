@@ -185,6 +185,20 @@ func writeAddressClip(to url:URL,lines:[String],seconds:Double=2) async throws {
     scan.previewTask?.cancel()
     lines.append("PASS the scan reads a recording, covers the address it found for as long as it is there, and leaves the rest")
 
+    // A scan describes the timeline it was made on. Cutting a range out moves everything after it, so the
+    // list is dropped rather than left pointing at the wrong moments; the block already placed moves with the cut.
+    scan.annotations=[];scan.privacyFinds=[];scan.privacyScanned=false
+    await scan.scanForSensitiveText()
+    guard let beforeCut=scan.privacyFinds.first else { throw privacyFailure("the second scan found nothing") }
+    scan.hideFind(beforeCut.id)
+    let placedAt=scan.annotations.first?.start ?? -1
+    guard scan.rippleDelete([VideoCut(start:0.2,end:0.7)]) else { throw privacyFailure("the test cut was not made") }
+    guard scan.privacyFinds.isEmpty,!scan.privacyScanned else { throw privacyFailure("a stale scan survived a cut") }
+    guard let movedBlock=scan.annotations.first,movedBlock.start<=placedAt+0.001 else { throw privacyFailure("the block already placed did not move with the cut") }
+    guard movedBlock.end<=scan.duration+0.001 else { throw privacyFailure("the block reaches past the shortened timeline") }
+    scan.previewTask?.cancel()
+    lines.append("PASS a cut drops the scan's list instead of leaving it pointing at the wrong moments")
+
     // The one-click pass: every step reaches an end, the fade is set, and the clicks are lit.
     let quick=Studio();quick.preferences.revealExport=false
     await quick.load(folder.appendingPathComponent("sample.mp4"))

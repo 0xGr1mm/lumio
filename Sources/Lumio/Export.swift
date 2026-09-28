@@ -224,3 +224,35 @@ let exportPresets: [ExportPreset] = [
         throw writer.error ?? NSError(domain:"Lumio",code:75,userInfo:[NSLocalizedDescriptionKey:"The transparent export did not finish."])
     }
 }
+
+@MainActor extension Studio {
+    /// Writes the frame under the playhead as a PNG, through the same pipeline the video export uses,
+    /// so a thumbnail carries the same background, zoom, captions and blocks as the video it belongs to.
+    func exportFrame(to requested:URL?=nil) async {
+        guard let source, stillImage == nil, !busy, duration > 0 else { return }
+        let destination: URL
+        if let requested { destination = requested }
+        else {
+            let save=NSSavePanel(); save.allowedContentTypes=[.png]
+            save.nameFieldStringValue="\(source.deletingPathExtension().lastPathComponent)-frame.png"
+            guard save.runModal() == .OK, let selected=save.url else { return }
+            destination=selected
+        }
+        guard destination.standardizedFileURL != source.standardizedFileURL else { message="Choose a different file name to preserve the raw recording."; return }
+        busy=true; player.pause(); playing=false
+        defer { busy=false }
+        do {
+            let (asset,composition,_)=try await makeEditingComposition(asset:AVURLAsset(url:source),size:look.canvas,fps:30)
+            let generator=AVAssetImageGenerator(asset:asset)
+            generator.videoComposition=composition
+            generator.requestedTimeToleranceBefore = .zero; generator.requestedTimeToleranceAfter = .zero
+            let at=max(0,min(duration-0.01,position))
+            let frame=try await generator.image(at:CMTime(seconds:at,preferredTimescale:600)).image
+            guard let data=NSBitmapImageRep(cgImage:frame).representation(using:.png,properties:[:]) else { throw failure("The frame could not be encoded as PNG.") }
+            try data.write(to:destination,options:.atomic)
+            lastExportURL=destination
+            flash("Frame saved as \(destination.lastPathComponent)")
+            if preferences.revealExport { NSWorkspace.shared.activateFileViewerSelecting([destination]) }
+        } catch { message=error.localizedDescription }
+    }
+}
