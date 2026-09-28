@@ -1,0 +1,6 @@
+.build/
+.DS_Store
+*.mov
+*.mp4
+Resources/Wallpapers/
+Resources/Audio/
