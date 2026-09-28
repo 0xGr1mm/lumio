@@ -5,7 +5,7 @@ import SwiftUI
 /// An arrow, box, text label, blurred region or spotlight shown over the recording for a time range.
 /// It is placed on the video itself, so it stays on the same spot while zooms and pans move the view.
 struct Annotation: Codable, Equatable, Identifiable {
-    static let kinds = ["Arrow","Box","Text","Blur","Spotlight"]
+    static let kinds = ["Arrow","Box","Text","Blur","Hide","Spotlight"]
     var id = UUID()
     var kind = "Arrow"
     var start: Double
@@ -29,6 +29,7 @@ struct Annotation: Codable, Equatable, Identifiable {
         case "Box": return "rectangle"
         case "Text": return "textformat"
         case "Blur": return "eye.slash"
+        case "Hide": return "square.slash"
         case "Spotlight": return "light.max"
         default: return "arrow.up.right"
         }
@@ -83,7 +84,7 @@ func annotated(_ source:CIImage,time:Double,annotations:[Annotation],art:Overlay
         return CIFilter(name:"CIRoundedRectangleGenerator",parameters:["inputExtent":CIVector(cgRect:region),"inputRadius":radius,"inputColor":CIColor(red:level,green:level,blue:level)])?.outputImage?.cropped(to:extent) ?? CIImage(color:CIColor(red:level,green:level,blue:level)).cropped(to:region)
     }
     // Pixel effects first, so arrows and labels are drawn sharp on top of them.
-    for a in active where a.kind == "Blur" || a.kind == "Spotlight" {
+    for a in active where a.kind == "Blur" || a.kind == "Hide" || a.kind == "Spotlight" {
         let alpha = a.alpha(at:time), region = annotationPixels(a.rect,in:size).intersection(extent)
         guard alpha > 0.001, !region.isNull, region.width >= 1, region.height >= 1 else { continue }
         let black = CIImage(color:.black).cropped(to:extent)
@@ -93,6 +94,10 @@ func annotated(_ source:CIImage,time:Double,annotations:[Annotation],art:Overlay
             let margin = region.insetBy(dx:-radius*3,dy:-radius*3).intersection(extent)
             let blurred = image.cropped(to:margin).clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:radius]).cropped(to:region)
             image = blurred.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:mask(region,level:alpha).composited(over:black)])
+        } else if a.kind == "Hide" {
+            // A block, not a blur: a blurred address can still be read back from a video, a covered one cannot.
+            let block = CIImage(color:CIColor(red:a.color.r,green:a.color.g,blue:a.color.b)).cropped(to:extent)
+            image = block.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:mask(region,level:alpha).composited(over:black)])
         } else {
             let keep = 1-min(0.9,a.strength*0.9)*alpha
             let dimmed = image.applyingFilter("CIColorMatrix",parameters:["inputRVector":CIVector(x:keep,y:0,z:0,w:0),"inputGVector":CIVector(x:0,y:keep,z:0,w:0),"inputBVector":CIVector(x:0,y:0,z:keep,w:0)])
@@ -175,6 +180,7 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
         case "Arrow": item.x = 0.3; item.y = 0.62; item.width = 0.16; item.height = -0.18
         case "Text": item.color = RGB(0xFFD60A); item.x = 0.35; item.y = 0.08; item.width = 0.3; item.height = 0.08
         case "Blur", "Spotlight": item.x = 0.3; item.y = 0.3; item.width = 0.4; item.height = 0.3
+        case "Hide": item.color = RGB(0x101216); item.x = 0.32; item.y = 0.42; item.width = 0.36; item.height = 0.1
         default: break
         }
         annotations.append(item); focusTimeline(.annotation,id:item.id)
@@ -209,6 +215,9 @@ struct AnnotationPanel: View {
                     Text(String(format:"Size · %.0f",item.fontSize)).font(.caption)
                     Slider(value:studio.binding(\.annotations,id:id,\.fontSize,fallback:item.fontSize),in:18...120)
                 }
+                if kind == "Hide" {
+                    ColorPicker("Block Color",selection:Binding(get:{ item.color.color },set:{ color in studio.update(\.annotations,id:id) { $0.color = RGB(color) } }),supportsOpacity:false)
+                }
                 if kind == "Arrow" || kind == "Box" || kind == "Text" {
                     ColorPicker("Color",selection:Binding(get:{ item.color.color },set:{ color in studio.update(\.annotations,id:id) { $0.color = RGB(color) } }),supportsOpacity:false)
                     HStack(spacing:8) {
@@ -231,7 +240,7 @@ struct AnnotationPanel: View {
                     Button("Delete",role:.destructive) { studio.deleteTimelineItem(.annotation,id:id) }
                 }
             } else {
-                Text("Arrows, boxes and labels point at part of the screen; Blur hides private details; Spotlight dims everything else. Select one in the timeline to edit it.")
+                Text("Arrows, boxes and labels point at part of the screen; Blur softens private details and Hide covers them outright; Spotlight dims everything else. Select one in the timeline to edit it.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             }
         }

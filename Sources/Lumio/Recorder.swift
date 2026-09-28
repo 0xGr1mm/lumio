@@ -41,6 +41,10 @@ struct RecorderPreferences: Codable {
             Task { await verifyLumio(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
         }
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-privacy" {
+            Task { await verifyPrivacyOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
+            return
+        }
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-transparent" {
             Task { await verifyTransparentExport(video:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return

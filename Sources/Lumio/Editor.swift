@@ -3,7 +3,7 @@ import AVKit
 
 struct Editor: View {
     @ObservedObject var studio: Studio
-    @State var tab = "Background"
+    @State var tab = "Quick"
     @State var library = false
     @State var presetLabel = "Twilight"
     @State var backgroundTab="wallpaper"
@@ -132,11 +132,12 @@ struct Editor: View {
             Menu { Button("Reset Look") { studio.look = Look() }; Button("Save as Default") { studio.saveDefaultLook() } } label: { Image(systemName:"paintbrush.pointed") }.help("Look").fixedSize()
         }.font(.system(size:12)).padding(.horizontal,26).padding(.top,16)
     }
-    /// Fourteen panels do not fit beside a short window, so the rail scrolls and says so instead of hiding the last icons.
+    /// Seventeen panels do not fit beside a short window, so the rail scrolls rather than hiding the last icons.
+    /// They are in the order a recording is usually finished in: the quick pass first, then the picture, then the details.
     var inspectorRail:some View {
         ScrollView(.vertical) {
             VStack(spacing:8) {
-                ForEach([("Versions","square.stack.3d.up"),("Retakes","arrow.triangle.2.circlepath"),("Background","photo.on.rectangle.angled"),("Video","play.rectangle"),("Zoom","viewfinder"),("Annotate","pencil.tip.crop.circle"),("Markers","bookmark"),("Cursor","cursorarrow"),("Camera","video"),("Captions","captions.bubble.fill"),("Transcript","text.quote"),("Cleanup","wand.and.stars"),("Animations","sparkles"),("Audio","speaker.wave.2.fill"),("Shortcuts","command.square.fill")],id:\.0) { item in
+                ForEach([("Quick","wand.and.rays"),("Zoom","viewfinder"),("Background","photo.on.rectangle.angled"),("Video","play.rectangle"),("Captions","captions.bubble.fill"),("Privacy","lock.shield.fill"),("Cleanup","wand.and.stars"),("Cursor","cursorarrow"),("Camera","video"),("Annotate","pencil.tip.crop.circle"),("Audio","speaker.wave.2.fill"),("Animations","sparkles"),("Markers","bookmark"),("Transcript","text.quote"),("Retakes","arrow.triangle.2.circlepath"),("Versions","square.stack.3d.up"),("Shortcuts","command.square.fill")],id:\.0) { item in
                     Button { tab = item.0 } label: { Image(systemName:item.1).font(.system(size:18)).foregroundStyle(tab == item.0 ? accent : .gray).frame(width:36,height:34).contentShape(Rectangle()).background(tab == item.0 ? accent.opacity(0.09) : .clear).clipShape(RoundedRectangle(cornerRadius:8)) }.buttonStyle(.plain).help(item.0).accessibilityLabel(item.0)
                 }
             }
@@ -149,7 +150,9 @@ struct Editor: View {
         ScrollView {
             VStack(alignment:.leading,spacing:20) {
                 Text(tab).font(.system(size:16,weight:.semibold))
-                if tab == "Background" {
+                if tab == "Quick" { QuickPanel(studio:studio) }
+                else if tab == "Privacy" { PrivacyPanel(studio:studio) }
+                else if tab == "Background" {
                     Picker("Background",selection:$backgroundTab) {
                         Image(systemName:"photo.on.rectangle").tag("wallpaper")
                         Image(systemName:"circle.lefthalf.filled").tag("gradient")
