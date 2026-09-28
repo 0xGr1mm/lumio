@@ -216,6 +216,7 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
         }
         annotations.append(item); focusTimeline(.annotation,id:item.id)
         player.pause(); playing = false; position = start+min(0.3,(item.end-start)/2); seek(position)
+        flash(kind == "Sticker" ? "\(item.text) added · drag it on the picture":"\(kind) added · drag it on the picture")
     }
     /// The line a short video opens with: big, across the top, for the first seconds, and it pops in.
     func addHookText(_ text:String="Watch this") {
@@ -225,6 +226,7 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
         item.x = 0.1; item.y = 0.07; item.width = 0.8; item.height = 0.12
         annotations.append(item); focusTimeline(.annotation,id:item.id)
         position = 0.5; seek(position); refreshComposition()
+        flash("Hook line added · type over it in the panel")
     }
     func setAnnotationRange(_ id:UUID,to range:TimelineRange) {
         guard let i = annotations.firstIndex(where:{ $0.id == id }) else { return }

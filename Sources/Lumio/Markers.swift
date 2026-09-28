@@ -62,6 +62,7 @@ func remappedMarkers(_ markers:[TimelineMarker],_ remap:(Double)->Double)->[Time
         let marker = TimelineMarker(time:spot,name:name ?? "Marker \(markers.count+1)")
         markers.append(marker); markers.sort { $0.time < $1.time }
         selectedMarker = marker.id
+        flash("Marker at \(String(format:"%.1f",spot)) s")
         return marker.id
     }
     func moveMarker(_ id:UUID,to time:Double) {

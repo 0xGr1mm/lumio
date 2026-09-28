@@ -8,6 +8,8 @@ struct QuickEditStep: Identifiable, Equatable {
     var label: String
     var detail = ""
     var state = "waiting"   // waiting · running · done · skipped
+    /// What to say when the step found nothing to change, which is an answer rather than a failure.
+    var note = ""
     var symbol: String
 }
 
@@ -18,11 +20,11 @@ struct QuickEditStep: Identifiable, Equatable {
         guard source != nil, stillImage == nil, duration > 0, !quickRunning, !busy else { return }
         quickRunning = true
         quickSteps = [
-            QuickEditStep(label:"Cutting dead air",symbol:"scissors"),
-            QuickEditStep(label:"Writing captions",symbol:"captions.bubble"),
-            QuickEditStep(label:"Zooming where you clicked",symbol:"viewfinder"),
-            QuickEditStep(label:"Checking for private details",symbol:"lock.shield"),
-            QuickEditStep(label:"Fading in and out",symbol:"circle.lefthalf.filled")
+            QuickEditStep(label:"Cutting dead air",note:"no dead air found",symbol:"scissors"),
+            QuickEditStep(label:"Writing captions",note:"no speech to write down",symbol:"captions.bubble"),
+            QuickEditStep(label:"Zooming where you clicked",note:"no clicks in the recording",symbol:"viewfinder"),
+            QuickEditStep(label:"Checking for private details",note:"nothing private on screen",symbol:"lock.shield"),
+            QuickEditStep(label:"Fading in and out",note:"the ends already fade",symbol:"circle.lefthalf.filled")
         ]
         defer { quickRunning = false }
 
@@ -76,6 +78,8 @@ struct QuickEditStep: Identifiable, Equatable {
             return "0.4 s in · 0.5 s out"
         }
         quickEditFinished = Date()
+        let changes = quickSteps.filter { $0.state == "done" }.count
+        flash(changes>0 ? "Ready · \(changes) change\(changes==1 ? "":"s")":"Already clean · nothing changed")
     }
 }
 
@@ -109,7 +113,7 @@ struct QuickPanel: View {
                                 Text(step.label).font(.system(size:12,weight:step.state == "running" ? .semibold: .regular))
                                     .foregroundStyle(step.state == "waiting" ? .secondary: .primary)
                                 if !step.detail.isEmpty { Text(step.detail).font(.system(size:10)).foregroundStyle(.secondary) }
-                                else if step.state == "skipped" { Text("nothing to do").font(.system(size:10)).foregroundStyle(.secondary) }
+                                else if step.state == "skipped" { Text(step.note).font(.system(size:10)).foregroundStyle(.secondary) }
                             }
                             Spacer(minLength:0)
                         }
@@ -117,10 +121,14 @@ struct QuickPanel: View {
                 }.padding(11).frame(maxWidth:.infinity,alignment:.leading)
                     .background(Color.white.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius:9))
                 if studio.quickEditFinished != nil && !studio.quickRunning {
+                    let changes = studio.quickSteps.filter { $0.state == "done" }.count
                     HStack(spacing:8) {
-                        Button { studio.undoEdit() } label: { Label("Undo Last Step",systemImage:"arrow.uturn.backward") }.controlSize(.small)
-                        Spacer()
+                        Image(systemName:changes>0 ? "checkmark.seal.fill":"hand.thumbsup").foregroundStyle(accent)
+                        Text(changes>0 ? "\(changes) change\(changes==1 ? "":"s") applied · preview is ready":"Nothing needed changing — it was already clean")
+                            .font(.system(size:11,weight:.medium)).fixedSize(horizontal:false,vertical:true)
+                        Spacer(minLength:0)
                     }
+                    Button { studio.undoEdit() } label: { Label("Undo Last Step",systemImage:"arrow.uturn.backward") }.controlSize(.small)
                 }
             }
             Divider()

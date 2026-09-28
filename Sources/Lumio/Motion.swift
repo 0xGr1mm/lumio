@@ -69,6 +69,9 @@ struct MotionSettings: Codable, Equatable {
     var hideTyping = false
     var cameraStyle: CameraStyle? = CameraStyle()
     var zoomOnTyping: Bool? = nil
+    /// How hard the picture snaps in at a cut, 0…100. Off at zero.
+    var punchOnCut: Double? = nil
+    var resolvedPunch: Double { let value=punchOnCut ?? 0;return value.isFinite ? max(0,min(100,value)):0 }
     /// Dims everything but a circle around the pointer, 0…100. Off at zero.
     var spotlight: Double? = nil
     /// Radius of that circle as a percentage of the video's shorter side.
@@ -86,6 +89,7 @@ struct MotionSettings: Codable, Equatable {
         value.color=value.color.normalized();value.blurAmount=max(0,min(1,value.blurAmount.isFinite ? value.blurAmount:0.8));value.blurCursor=max(0,min(1,value.blurCursor.isFinite ? value.blurCursor:1));value.blurScreen=max(0,min(1,value.blurScreen.isFinite ? value.blurScreen:0.8));value.blurZoom=max(0,min(1,value.blurZoom.isFinite ? value.blurZoom:1));value.snap=max(0,min(1,value.snap.isFinite ? value.snap:0.25));value.blurQuality=max(0,min(2,value.blurQuality))
         value.stiffness=max(20,min(1000,value.stiffness.isFinite ? value.stiffness:470));value.damping=max(1,min(150,value.damping.isFinite ? value.damping:70));value.mass=max(0.2,min(10,value.mass.isFinite ? value.mass:3));value.threshold=max(0,min(1000,value.threshold.isFinite ? value.threshold:500))
         value.cameraStyle=(value.cameraStyle ?? CameraStyle()).normalized()
+        if value.punchOnCut != nil { value.punchOnCut=value.resolvedPunch }
         if value.spotlight != nil { value.spotlight=value.resolvedSpotlight }
         if value.spotlightSize != nil { value.spotlightSize=value.resolvedSpotlightSize }
         return value
@@ -161,6 +165,17 @@ func autoZoomClips(samples:[PointerSample],settings:MotionSettings,duration:Doub
     }
     return clips
 }
+/// A cut lands harder when the picture snaps in a little and eases straight back out.
+/// Punches are left out wherever a zoom is already running, so a punch never pulls a zoomed view back out.
+func punchZoomClips(cuts:[Double],duration:Double,strength:Double,avoiding zooms:[ZoomClip])->[ZoomClip] {
+    guard strength>0,duration>0.6 else { return [] }
+    let scale=1+strength/100*0.2
+    return cuts.sorted().filter { cut in
+        cut>0.05 && cut<duration-0.15 && !zooms.contains { cut>=$0.start-0.1 && cut<=$0.end+0.1 }
+    // A short hold between two quick ramps: it snaps in, sits for a moment and lets go.
+    }.map { ZoomClip(start:$0,end:min(duration,$0+0.32),scale:scale,x:0.5,y:0.5,transition:0.09,follow:false) }
+}
+
 /// Camera target for automatic zooms: follows the pointer with a dead zone and a critically damped spring,
 /// so small pointer movements do not pan the zoomed view.
 func cameraFollowPath(_ samples:[PointerSample],settings:MotionSettings,viewFraction:Double?=nil)->[PointerSample] {

@@ -25,6 +25,8 @@ struct Editor: View {
                         .aspectRatio(studio.look.canvas.width/studio.look.canvas.height,contentMode:.fit)
                         .frame(maxWidth:.infinity,maxHeight:.infinity)
                         .padding(.horizontal,28).padding(.vertical,16)
+                        .overlay(alignment:.bottom) { if let toast=studio.toast { ToastView(text:toast) } }
+                        .animation(.spring(response:0.32,dampingFraction:0.8),value:studio.toast)
                     transport
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 Divider()

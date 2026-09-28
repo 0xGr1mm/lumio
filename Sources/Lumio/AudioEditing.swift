@@ -48,6 +48,7 @@ let bundledMusic=[
     func addBundledMusic(_ music:BundledMusic) {
         guard let url=Bundle.main.url(forResource:music.file,withExtension:"wav",subdirectory:"Audio") else {message="The bundled music file is missing.";return}
         audioTracks.append(AudioTrackEdit(name:music.name,path:url.path,kind:"Music",timelineStart:position,sourceEnd:16,loop:true));selectedAudioTrack=audioTracks.last?.id
+        flash("\(music.name) added to the timeline")
     }
     func previewMusic(_ music:BundledMusic) {
         guard let url=Bundle.main.url(forResource:music.file,withExtension:"wav",subdirectory:"Audio") else{return}

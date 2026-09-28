@@ -58,6 +58,9 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
     @Published var quickSteps:[QuickEditStep]=[]
     @Published var quickRunning=false
     @Published var quickEditFinished:Date?
+    /// A short confirmation shown over the picture; see flash(_:).
+    @Published var toast:String?
+    var toastTask:Task<Void,Never>?
     @Published var cleanupScanning=false
     @Published var cleanupThreshold = -45.0
     @Published var cleanupMinimumDuration = 0.7

@@ -137,6 +137,7 @@ let exportPresets: [ExportPreset] = [
         exportSettings.store()
         if stillImage == nil { look.autoReframe = preset.autoReframe && mediaAspect > 1.2 }
         refreshComposition()
+        flash("Set up for \(preset.id)")
     }
 }
 

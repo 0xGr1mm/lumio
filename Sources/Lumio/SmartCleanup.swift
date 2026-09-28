@@ -122,7 +122,7 @@ func analyzeSourceSilence(url:URL,thresholdDB:Double,minimumDuration:Double,padd
     func applySelectedCleanup() {
         let chosen=cleanupCandidates.filter(\.selected).map{VideoCut(start:$0.start,end:$0.end)}
         guard !chosen.isEmpty else{message="Select at least one cleanup suggestion.";return}
-        if rippleDelete(chosen) {cleanupCandidates=[]}
+        if rippleDelete(chosen) {cleanupCandidates=[];flash("\(chosen.count) range\(chosen.count==1 ? "":"s") removed")}
     }
     /// Removes timeline ranges and closes the gaps across clips, zooms, captions and added audio as one undoable edit.
     @discardableResult func rippleDelete(_ ranges:[VideoCut])->Bool {

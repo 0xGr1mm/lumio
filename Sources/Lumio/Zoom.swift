@@ -91,6 +91,7 @@ func zoomPose(at time: Double, clips: [ZoomClip]) -> ZoomPose {
         zooms.append(clip); selectedZoom = clip.id; timelineFocus = .zoom
         player.pause(); playing = false
         position = min(end,start+min(0.5,(end-start)/2)); seek(position)
+        flash("Zoom added · drag its edges in the timeline")
     }
 }
 struct ZoomInspector: View {

@@ -26,6 +26,6 @@ struct EditSnapshot:Codable,Equatable {
         synchronizeVideoSequence(refresh:false,trimItems:false)
         previousSnapshot=s;refreshComposition()
     }
-    func undoEdit() { guard let last=undoStack.popLast() else{return};redoStack.append(snapshot);restore(last) }
-    func redoEdit() { guard let last=redoStack.popLast() else{return};undoStack.append(snapshot);restore(last) }
+    func undoEdit() { guard let last=undoStack.popLast() else{return};redoStack.append(snapshot);restore(last);flash("Undone") }
+    func redoEdit() { guard let last=redoStack.popLast() else{return};undoStack.append(snapshot);restore(last);flash("Redone") }
 }

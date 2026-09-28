@@ -35,6 +35,34 @@ func privacyRecognizedLines(_ image:CGImage)->[String] {
     catch { print("FAIL \(error.localizedDescription)"); exit(1) }
 }
 
+/// Writes a short recording of a screen with a wallet address on it, so the scan can be run the way it
+/// runs for a user: over frames read out of a file rather than over a picture handed to it.
+func writeAddressClip(to url:URL,lines:[String],seconds:Double=2) async throws {
+    guard let frame=privacyTestScreen(lines:lines) else { throw NSError(domain:"Lumio",code:96,userInfo:[NSLocalizedDescriptionKey:"the test screen could not be drawn"]) }
+    try? FileManager.default.removeItem(at:url)
+    let size=CGSize(width:frame.width,height:frame.height)
+    let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
+    let input=AVAssetWriterInput(mediaType:.video,outputSettings:[AVVideoCodecKey:AVVideoCodecType.h264,AVVideoWidthKey:frame.width,AVVideoHeightKey:frame.height])
+    input.expectsMediaDataInRealTime=false
+    let adaptor=AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:input,sourcePixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
+    writer.add(input);writer.startWriting();writer.startSession(atSourceTime:.zero)
+    var buffer:CVPixelBuffer?
+    CVPixelBufferCreate(nil,frame.width,frame.height,kCVPixelFormatType_32BGRA,nil,&buffer)
+    guard let buffer else { throw NSError(domain:"Lumio",code:95,userInfo:[NSLocalizedDescriptionKey:"no pixel buffer"]) }
+    CVPixelBufferLockBaseAddress(buffer,[])
+    if let base=CVPixelBufferGetBaseAddress(buffer),
+       let context=CGContext(data:base,width:frame.width,height:frame.height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(buffer),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipFirst.rawValue|CGBitmapInfo.byteOrder32Little.rawValue) {
+        context.draw(frame,in:CGRect(origin:.zero,size:size))
+    }
+    CVPixelBufferUnlockBaseAddress(buffer,[])
+    for index in 0..<Int(seconds*30) {
+        while !input.isReadyForMoreMediaData { try await Task.sleep(for:.milliseconds(10)) }
+        adaptor.append(buffer,withPresentationTime:CMTime(value:CMTimeValue(index),timescale:30))
+    }
+    input.markAsFinished()
+    await writer.finishWriting()
+}
+
 @MainActor func verifyPrivacy(folder:URL) async throws->[String] {
     var lines:[String]=[]
     func privacyFailure(_ text:String)->NSError { NSError(domain:"Lumio",code:98,userInfo:[NSLocalizedDescriptionKey:text]) }
@@ -122,6 +150,40 @@ func privacyRecognizedLines(_ image:CGImage)->[String] {
     guard plain.centre>hidden.centre+25 else { throw privacyFailure("the picture under the block was already dark: \(plain.centre)") }
     hideStudio.previewTask?.cancel()
     lines.append("PASS a Hide block covers the picture where it is placed and leaves the rest of the frame alone")
+
+    // The whole scan, the way it runs for a user: frames read out of a recording, then covered.
+    let clipURL=folder.appendingPathComponent("privacy-screen.mp4")
+    try await writeAddressClip(to:clipURL,lines:["Send to  0x71C7656EC7ab88b098defB751B7401B5f6d8976F","Confirm in wallet"])
+    let scan=Studio();scan.preferences.revealExport=false
+    await scan.load(clipURL)
+    guard scan.message==nil,scan.duration>1.5 else { throw privacyFailure("the address recording did not open: \(scan.message ?? "no duration")") }
+    scan.privacyAddresses=true;scan.privacyEmails=true;scan.privacyBalances=false
+    await scan.scanForSensitiveText()
+    guard !scan.privacyScanning,scan.privacyProgress==nil else { throw privacyFailure("the scan did not finish") }
+    guard let onScreen=scan.privacyFinds.first(where:{ $0.kind=="Wallet Address" }) else {
+        throw privacyFailure("the scan found nothing in the recording: \(scan.privacyFinds.map(\.kind))") }
+    // It is on screen the whole time, so the block has to last the whole time.
+    guard onScreen.start<0.2,onScreen.end>scan.duration-0.3 else { throw privacyFailure("the range does not cover the recording: \(onScreen.start) – \(onScreen.end)") }
+    scan.hideEveryFind()
+    guard scan.annotations.count==scan.privacyFinds.count,scan.annotations.allSatisfy({ $0.kind=="Hide" }),scan.privacyFinds.allSatisfy(\.hidden) else {
+        throw privacyFailure("the finds were not covered: \(scan.annotations.count) blocks for \(scan.privacyFinds.count) finds") }
+    guard let block=scan.annotations.first(where:{ abs($0.y-onScreen.rect.minY)<0.001 }) else { throw privacyFailure("a block is not where its find was") }
+    guard block.start==onScreen.start,block.end==onScreen.end else { throw privacyFailure("a block does not last as long as its find") }
+    // And the picture under it is gone: the address was dark text on white, the block is near black.
+    scan.look.padding=0;scan.look.radius=0;scan.look.shadow=0;scan.look.glow=0
+    let (scanAsset,scanComposition,_)=try await scan.makeEditingComposition(asset:AVURLAsset(url:clipURL),size:CGSize(width:640,height:360),fps:30)
+    let scanGenerator=AVAssetImageGenerator(asset:scanAsset);scanGenerator.videoComposition=scanComposition
+    scanGenerator.requestedTimeToleranceBefore = .zero;scanGenerator.requestedTimeToleranceAfter = .zero
+    let coveredFrame=try await scanGenerator.image(at:CMTime(seconds:1,preferredTimescale:600)).image
+    var covered=[UInt8](repeating:0,count:640*360*4)
+    context.render(CIImage(cgImage:coveredFrame),toBitmap:&covered,rowBytes:640*4,bounds:CGRect(x:0,y:0,width:640,height:360),format:.RGBA8,colorSpace:nil)
+    let blockRow=Int((block.y+block.height/2)*360),blockColumn=Int((block.x+block.width/2)*640)
+    let insideBlock=looksPatch(covered,x:max(0,blockColumn-8),y:max(0,blockRow-4),size:12,width:640,height:360)
+    let elsewhere=looksPatch(covered,x:40,y:40,size:20,width:640,height:360)
+    guard insideBlock<60 else { throw privacyFailure("the address is still readable under the block: \(insideBlock)") }
+    guard elsewhere>150 else { throw privacyFailure("the block covered more than the address: \(elsewhere)") }
+    scan.previewTask?.cancel()
+    lines.append("PASS the scan reads a recording, covers the address it found for as long as it is there, and leaves the rest")
 
     // The one-click pass: every step reaches an end, the fade is set, and the clicks are lit.
     let quick=Studio();quick.preferences.revealExport=false

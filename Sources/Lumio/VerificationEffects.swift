@@ -87,6 +87,39 @@ import Foundation
     bar.previewTask?.cancel()
     lines.append("PASS the progress bar fills across the bottom as the video plays and leaves no trace when off")
 
+    // The punch at a cut: a short snap in, and nothing where a zoom is already running.
+    let cuts=[0.0,1.5,2.4]
+    let punches=punchZoomClips(cuts:cuts,duration:3,strength:80,avoiding:[])
+    guard punches.count==2,let first=punches.first,abs(first.start-1.5)<0.001,first.scale>1.1,first.scale<1.3,first.end<1.9 else {
+        throw effectsFailure("the punches are wrong: \(punches.map { ($0.start,$0.scale) })") }
+    guard punchZoomClips(cuts:cuts,duration:3,strength:0,avoiding:[]).isEmpty else { throw effectsFailure("a punch was made at zero strength") }
+    let busy=[ZoomClip(start:1.2,end:2,scale:2,transition:0.3)]
+    guard punchZoomClips(cuts:cuts,duration:3,strength:80,avoiding:busy).count==1 else { throw effectsFailure("a punch was placed inside a zoom") }
+    // The pose has to rise at the cut and be back to normal after the punch is over.
+    let atCut=motionPose(at:1.62,manual:[],auto:punches,samples:[],settings:MotionSettings())
+    let rightAtTheCut=motionPose(at:1.5,manual:[],auto:punches,samples:[],settings:MotionSettings())
+    let afterCut=motionPose(at:2.1,manual:[],auto:punches,samples:[],settings:MotionSettings())
+    guard atCut.scale>1.1,rightAtTheCut.scale<=1.001,afterCut.scale<=1.001 else {
+        throw effectsFailure("the punch does not snap in and back: \(rightAtTheCut.scale) / \(atCut.scale) / \(afterCut.scale)") }
+    // And it reaches the picture: the frame right after a cut is not the frame without a punch.
+    let punchStudio=Studio();punchStudio.preferences.revealExport=false
+    await punchStudio.load(folder.appendingPathComponent("sample.mp4"))
+    punchStudio.motion.showCursor=false;punchStudio.motion.autoZoom=false
+    punchStudio.videoClips=[VideoClip(sourceStart:0,sourceEnd:1.5,timelineStart:0),VideoClip(sourceStart:1.5,sourceEnd:3,timelineStart:1.5)]
+    punchStudio.synchronizeVideoSequence(refresh:false)
+    let flat=try await framePixels(punchStudio,at:1.6)
+    punchStudio.motion.punchOnCut=90
+    let punched=try await framePixels(punchStudio,at:1.6)
+    let settledAfter=try await framePixels(punchStudio,at:2.2)
+    guard looksDistance(flat,punched)>2 else { throw effectsFailure("the punch did not reach the picture: \(looksDistance(flat,punched))") }
+    let quiet=try await framePixels(punchStudio,at:2.2)
+    punchStudio.motion.punchOnCut=0
+    let quietFlat=try await framePixels(punchStudio,at:2.2)
+    guard looksDistance(quiet,quietFlat)<1,looksDistance(settledAfter,quietFlat)<1 else {
+        throw effectsFailure("the punch is still there after it should have eased out: \(looksDistance(quiet,quietFlat))") }
+    punchStudio.previewTask?.cancel()
+    lines.append("PASS a cut punches in and eases back out, and no punch is made where a zoom is already running")
+
     // The pop: a sticker starts at nothing, overshoots its own size and settles there.
     var sticker=Annotation(kind:"Sticker",start:1,end:3)
     sticker.text="🚀";sticker.fontSize=130

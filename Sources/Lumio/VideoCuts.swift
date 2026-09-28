@@ -198,6 +198,7 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
         if !stillCovered { closeTimelineGap(from:removed.timelineStart,length:removed.duration) }
         selectedClip=videoClips[min(index,videoClips.count-1)].id
         synchronizeVideoSequence()
+        flash("Clip removed · the timeline closed over it")
         position=max(0,min(duration,position));seek(position)
     }
 

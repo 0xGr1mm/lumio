@@ -35,6 +35,16 @@ struct AutoZoomPanel:View {
             }.pickerStyle(.segmented)
             Text(studio.motion.motion == "focused" ? "Settles quickly and keeps text easy to follow." : studio.motion.motion == "fluid" ? "Uses smooth, fluid camera movement." : "Adds a quick spring overshoot and return.").font(.caption).foregroundStyle(.secondary)
             Divider()
+            Text("Punch on Cut").font(.subheadline).foregroundStyle(.secondary)
+            Text("Every cut snaps in a little and eases back, so a cut reads as one. Left out wherever a zoom is already running.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            MotionSlider(title:"Strength",value:Binding(get:{studio.motion.resolvedPunch},set:{studio.motion.punchOnCut=$0}),range:0...100,suffix:"%")
+            HStack(spacing:8) {
+                Button("Off") { studio.motion.punchOnCut=0 }
+                Button("Subtle") { studio.motion.punchOnCut=40 }
+                Button("Punchy") { studio.motion.punchOnCut=85 }
+            }.controlSize(.small)
+            Divider()
             Text("Motion Blur").font(.subheadline).foregroundStyle(.secondary)
             Toggle("Enable",isOn:$studio.motion.blurEnabled)
             MotionSlider(title:"Amount",value:$studio.motion.blurAmount,range:0...1)

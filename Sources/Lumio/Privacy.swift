@@ -209,6 +209,7 @@ func overlapFraction(_ a:CGRect,_ b:CGRect)->Double {
         annotations.append(item)
         privacyFinds[index].hidden = true
         refreshComposition()
+        flash("\(find.kind) covered")
         return item.id
     }
     func hideEveryFind() {
