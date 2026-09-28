@@ -87,6 +87,62 @@ import Foundation
     bar.previewTask?.cancel()
     lines.append("PASS the progress bar fills across the bottom as the video plays and leaves no trace when off")
 
+    // Everything added here has to survive a saved project and an undo, or it is only a preview trick.
+    let kept=Studio();kept.preferences.revealExport=false
+    await kept.load(folder.appendingPathComponent("sample.mp4"))
+    kept.look.handleText=" @lumio.eth ";kept.look.handlePosition="Top Right";kept.look.handleSize=4.5
+    kept.look.progressBar=12;kept.look.progressColor=RGB(0x00AAFF)
+    kept.motion.spotlight=70;kept.motion.spotlightSize=30;kept.motion.punchOnCut=55
+    var keptSticker=Annotation(kind:"Sticker",start:0.2,end:1.2);keptSticker.text="💎";keptSticker.fontSize=180
+    var keptBlock=Annotation(kind:"Hide",start:0,end:2);keptBlock.color=RGB(0x101216)
+    kept.annotations=[keptSticker,keptBlock]
+    let project=LumioProject(source:kept.source!.path,look:kept.look,start:kept.trimStart,end:kept.trimEnd,videoClips:kept.videoClips,zooms:kept.zooms,motion:kept.motion,annotations:kept.annotations)
+    let encoded=try JSONEncoder().encode(project)
+    let reopened=try JSONDecoder().decode(LumioProject.self,from:encoded)
+    let restoredLook=reopened.look.normalized(),restoredMotion=(reopened.motion ?? MotionSettings()).normalized()
+    guard restoredLook.resolvedHandleText=="@lumio.eth",restoredLook.resolvedHandlePosition=="Top Right",abs(restoredLook.resolvedHandleSize-4.5)<0.001 else {
+        throw effectsFailure("the handle did not survive the project: \(restoredLook.resolvedHandleText) / \(restoredLook.resolvedHandlePosition)") }
+    guard abs(restoredLook.resolvedProgressBar-12)<0.001,restoredLook.resolvedProgressColor==RGB(0x00AAFF) else { throw effectsFailure("the progress bar did not survive the project") }
+    guard abs(restoredMotion.resolvedSpotlight-70)<0.001,abs(restoredMotion.resolvedSpotlightSize-30)<0.001,abs(restoredMotion.resolvedPunch-55)<0.001 else {
+        throw effectsFailure("the spotlight or the punch did not survive the project") }
+    let restoredAnnotations=normalizedAnnotations(reopened.annotations ?? [],duration:3)
+    guard restoredAnnotations.count==2,restoredAnnotations.contains(where:{ $0.kind=="Sticker" && $0.text=="💎" && $0.fontSize==180 }),
+          restoredAnnotations.contains(where:{ $0.kind=="Hide" }) else {
+        throw effectsFailure("stickers and blocks did not survive the project: \(restoredAnnotations.map(\.kind))") }
+    // A look nobody touched still equals a fresh one, so normalizing does not invent a bar or a handle.
+    guard Look().normalized()==Look(),MotionSettings().normalized()==MotionSettings() else { throw effectsFailure("an untouched look no longer matches a fresh one") }
+    // Undo has to take the same settings back.
+    kept.previousSnapshot=kept.snapshot
+    let before=kept.snapshot
+    kept.look.progressBar=0;kept.motion.spotlight=0;kept.annotations=[]
+    kept.undoStack=[before];kept.undoEdit()
+    guard abs(kept.look.resolvedProgressBar-12)<0.001,abs(kept.motion.resolvedSpotlight-70)<0.001,kept.annotations.count==2 else {
+        throw effectsFailure("undo did not bring the new settings back") }
+    kept.previewTask?.cancel()
+    lines.append("PASS the handle, bar, spotlight, punch, stickers and blocks survive a saved project and come back on undo")
+
+    // The handle: drawn in the corner it was asked for, and nowhere when it is empty.
+    let named=Studio();named.preferences.revealExport=false
+    await named.load(folder.appendingPathComponent("sample.mp4"))
+    named.motion.showCursor=false;named.motion.autoZoom=false
+    let unnamed=try await framePixels(named,at:1.5)
+    named.look.handleText="@lumio.eth";named.look.handlePosition="Bottom Left";named.look.handleSize=5;named.look.handleOpacity=100
+    let bottomLeft=try await framePixels(named,at:1.5)
+    named.look.handlePosition="Top Right"
+    let topRight=try await framePixels(named,at:1.5)
+    // The picture is upright in these pixels, so the first rows are the top of the canvas.
+    let lowLeft=patchDistance(unnamed,bottomLeft,x:24,y:height-40,size:30),highRight=patchDistance(unnamed,bottomLeft,x:width-120,y:12,size:30)
+    guard lowLeft>4 else { throw effectsFailure("the handle was not drawn in the bottom left: \(lowLeft)") }
+    guard highRight<1 else { throw effectsFailure("the handle was drawn in a corner it was not asked for: \(highRight)") }
+    guard patchDistance(unnamed,topRight,x:width-120,y:12,size:30)>4 else { throw effectsFailure("the handle did not move to the top right") }
+    named.look.handleText=""
+    let cleared=try await framePixels(named,at:1.5)
+    guard looksDistance(unnamed,cleared)<0.5 else { throw effectsFailure("the handle stayed after it was cleared") }
+    guard handleArtwork("",fontSize:40,color:RGB(0xFFFFFF))==nil,handleArtwork("@a",fontSize:40,color:RGB(0xFFFFFF)) != nil else {
+        throw effectsFailure("the handle drawing does not handle an empty name") }
+    named.previewTask?.cancel()
+    lines.append("PASS a handle is drawn in the corner it was given, moves with that choice and leaves no trace when cleared")
+
     // The punch at a cut: a short snap in, and nothing where a zoom is already running.
     let cuts=[0.0,1.5,2.4]
     let punches=punchZoomClips(cuts:cuts,duration:3,strength:80,avoiding:[])

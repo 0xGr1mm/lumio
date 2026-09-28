@@ -51,6 +51,7 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
     @Published var cleanupCandidates:[CleanupCandidate]=[]
     @Published var privacyFinds:[SensitiveFind]=[]
     @Published var privacyScanning=false
+    @Published var privacyScanned=false
     @Published var privacyProgress:Double?
     @Published var privacyAddresses=true
     @Published var privacyEmails=true
@@ -201,7 +202,7 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
                 mediaAspect = abs(bounds.width / bounds.height)
             }
             sourceDuration=length
-            zooms = []; selectedZoom = nil; cameraPath=nil;cameraOffset=nil;captions=[];selectedCaption=nil;captionStyle=CaptionStyle();audioTracks=[];selectedAudioTrack=nil;audioSettings=AudioMixSettings();cleanupCandidates=[];privacyFinds=[];quickSteps=[];quickEditFinished=nil;loadPointerData(url);loadKeyboardData(url);await loadRetakes(url);savedVersions=[];undoStack=[];redoStack=[];previousSnapshot=nil
+            zooms = []; selectedZoom = nil; cameraPath=nil;cameraOffset=nil;captions=[];selectedCaption=nil;captionStyle=CaptionStyle();audioTracks=[];selectedAudioTrack=nil;audioSettings=AudioMixSettings();cleanupCandidates=[];privacyFinds=[];privacyScanned=false;quickSteps=[];quickEditFinished=nil;loadPointerData(url);loadKeyboardData(url);await loadRetakes(url);savedVersions=[];undoStack=[];redoStack=[];previousSnapshot=nil
             microphonePath=nil;microphoneOffset=nil
             loadCameraSidecar(url);loadMicrophoneSidecar(url)
             player.pause(); playing = false; stillImage = nil; source = url; duration = length; trimStart = 0; trimEnd = length; position = 0
@@ -354,7 +355,7 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
         player.pause(); player.replaceCurrentItem(with:nil); playing = false
         zooms=[];selectedZoom=nil;annotations=[];selectedAnnotation=nil;addedSources=[:];markers=[];selectedMarker=nil;waveforms=[:];waveformTask?.cancel();cameraPath=nil;cameraOffset=nil;microphonePath=nil;microphoneOffset=nil;pointerSamples=[];cursorEmbedded=true;keyboardSamples=[]
         captions=[];selectedCaption=nil;captionStyle=CaptionStyle();audioTracks=[];selectedAudioTrack=nil;audioSettings=AudioMixSettings()
-        retakes=[];cleanupCandidates=[];privacyFinds=[];quickSteps=[];quickEditFinished=nil;savedVersions=[];undoStack=[];redoStack=[];previousSnapshot=nil;timelineTool="select"
+        retakes=[];cleanupCandidates=[];privacyFinds=[];privacyScanned=false;quickSteps=[];quickEditFinished=nil;savedVersions=[];undoStack=[];redoStack=[];previousSnapshot=nil;timelineTool="select"
         source = url; stillImage = image; mediaAspect = image.size.width/image.size.height
         sourceDuration=0;videoClips=[];selectedClip=nil;duration = 0; position = 0; trimStart = 0; trimEnd = 0; onOpenEditor?()
     }

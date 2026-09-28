@@ -211,11 +211,24 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
             let bottom=look.resolvedWatermarkPosition.hasPrefix("Bottom")
             watermarkRect=CGRect(x:left ? margin:size.width-margin-width,y:bottom ? margin:size.height-margin-height,width:width,height:height)
         }
+        var handle:CGImage?=nil
+        var handleRect:CGRect = .zero
+        if !look.resolvedHandleText.isEmpty,
+           let drawn=handleArtwork(look.resolvedHandleText,fontSize:size.height*look.resolvedHandleSize/100,color:look.resolvedHandleColor) {
+            handle=drawn
+            let margin=size.width*0.03
+            let left=look.resolvedHandlePosition.hasSuffix("Left")
+            // Core Image counts from the bottom, so "Top" is the far edge.
+            let bottom=look.resolvedHandlePosition.hasPrefix("Bottom")
+            handleRect=CGRect(x:left ? margin:size.width-margin-Double(drawn.width),
+                              y:bottom ? margin:size.height-margin-Double(drawn.height),
+                              width:Double(drawn.width),height:Double(drawn.height))
+        }
         // A clip that dips to black hands over at its own start, half the dip on each side of the cut.
         let dips=clips.filter { $0.resolvedTransition>0 && $0.resolvedTransitionKind=="Dip to Black" && $0.timelineStart>0.001 }.map { RenderTimeRange(start:$0.timelineStart,end:$0.resolvedTransition) }
         // The pointer belongs to the opened recording, so it is not drawn over footage added to the project.
         let cursorRanges=segments.compactMap {start,end -> RenderTimeRange? in activeClip(start,end)?.source == nil ? RenderTimeRange(start:start,end:end):nil }
-        let design=FrameDesign(size:size,rect:rect,placement:placement,crop:(look.videoStyle ?? VideoStyle()).cropRect,reframe:reframe,transform:preferred,background:layerImage(background,size:size),border:layerImage(border,size:size),mask:layerImage(mask,size:size),ripple:rippleArtwork(),cursors:cursors,hotspots:hotspots,samples:samples,follow:cameraFollowPath(samples,settings:motion,viewFraction:placement.followFraction(zoom:motion.zoom,reframe:reframe)),clicks:clicks,manual:zooms,auto:automaticZooms+punches,settings:motion,videoStyle:look.videoStyle ?? VideoStyle(),cameraStyle:motion.cameraStyle ?? CameraStyle(),captionCues:captions,captionStyle:captionStyle,shortcuts:keys.filter{!($0.typing ?? false)},typingTimes:typing,keyboardStyle:keyboardStyle,overlays:OverlayArtCache(captionStyle:captionStyle,keyboardStyle:keyboardStyle),duration:editDuration.seconds,cameraID:cameraID,transparent:look.isTransparent,visibleRanges:visibleRanges,annotations:annotations,fadeIn:look.resolvedFadeIn,fadeOut:look.resolvedFadeOut,dips:dips,dissolves:dissolves,secondaryID:secondaryID,watermark:watermark,watermarkRect:watermarkRect,watermarkOpacity:look.resolvedWatermarkOpacity/100,personMasks:(motion.cameraStyle ?? CameraStyle()).resolvedBackground == "None" ? nil:PersonMaskMaker(quality:size.height<=720 ? .fast: .balanced),cursorRanges:cursorRanges,progressHeight:look.resolvedProgressBar*size.height/1080,progressColor:look.resolvedProgressColor)
+        let design=FrameDesign(size:size,rect:rect,placement:placement,crop:(look.videoStyle ?? VideoStyle()).cropRect,reframe:reframe,transform:preferred,background:layerImage(background,size:size),border:layerImage(border,size:size),mask:layerImage(mask,size:size),ripple:rippleArtwork(),cursors:cursors,hotspots:hotspots,samples:samples,follow:cameraFollowPath(samples,settings:motion,viewFraction:placement.followFraction(zoom:motion.zoom,reframe:reframe)),clicks:clicks,manual:zooms,auto:automaticZooms+punches,settings:motion,videoStyle:look.videoStyle ?? VideoStyle(),cameraStyle:motion.cameraStyle ?? CameraStyle(),captionCues:captions,captionStyle:captionStyle,shortcuts:keys.filter{!($0.typing ?? false)},typingTimes:typing,keyboardStyle:keyboardStyle,overlays:OverlayArtCache(captionStyle:captionStyle,keyboardStyle:keyboardStyle),duration:editDuration.seconds,cameraID:cameraID,transparent:look.isTransparent,visibleRanges:visibleRanges,annotations:annotations,fadeIn:look.resolvedFadeIn,fadeOut:look.resolvedFadeOut,dips:dips,dissolves:dissolves,secondaryID:secondaryID,watermark:watermark,watermarkRect:watermarkRect,watermarkOpacity:look.resolvedWatermarkOpacity/100,personMasks:(motion.cameraStyle ?? CameraStyle()).resolvedBackground == "None" ? nil:PersonMaskMaker(quality:size.height<=720 ? .fast: .balanced),cursorRanges:cursorRanges,handle:handle,handleRect:handleRect,handleOpacity:look.resolvedHandleOpacity/100,progressHeight:look.resolvedProgressBar*size.height/1080,progressColor:look.resolvedProgressColor)
         let video=AVMutableVideoComposition();video.customVideoCompositorClass=FrameCompositor.self
         video.renderSize=size;video.frameDuration=CMTime(value:1,timescale:Int32(max(1,fps)))
         // Frame timing comes from frameDuration, not the source track: screen recordings are variable-rate,

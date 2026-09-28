@@ -54,6 +54,10 @@ struct FrameDesign {
     var personMasks:PersonMaskMaker?=nil
     /// Stretches played by the recording the editor was opened with; only there is its pointer drawn.
     var cursorRanges:[RenderTimeRange]=[]
+    /// A name drawn in a corner of every frame, already placed.
+    var handle:CGImage?=nil
+    var handleRect:CGRect = .zero
+    var handleOpacity:Double=1
     /// Height in canvas pixels of the bar that fills as the video plays, and its colour. Zero for none.
     var progressHeight:Double=0
     var progressColor:RGB=RGB(0xBFEE63)
@@ -490,6 +494,12 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
             var placed=image.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
             placed=placed.transformed(by:CGAffineTransform(translationX:d.watermarkRect.midX-placed.extent.width/2-placed.extent.minX,y:d.watermarkRect.midY-placed.extent.height/2-placed.extent.minY))
             if d.watermarkOpacity<0.999 { placed=opacity(placed,d.watermarkOpacity) }
+            final=placed.composited(over:final).cropped(to:canvas)
+        }
+        if let handle=d.handle,d.handleRect.width>1 {
+            var placed=CIImage(cgImage:handle)
+            placed=placed.transformed(by:CGAffineTransform(translationX:d.handleRect.minX-placed.extent.minX,y:d.handleRect.minY-placed.extent.minY))
+            if d.handleOpacity<0.999 { placed=opacity(placed,d.handleOpacity) }
             final=placed.composited(over:final).cropped(to:canvas)
         }
         if d.progressHeight>=1,d.duration>0 {

@@ -13,6 +13,7 @@ struct Editor: View {
     @State var videoClipExpanded=false
     @State var videoCropExpanded=false
     @State var videoProgressExpanded=false
+    @State var videoHandleExpanded=false
     var body:some View {
         VStack(spacing:0) {
             header
@@ -261,6 +262,7 @@ struct Editor: View {
             Button("Reset Video Transform") { var value=studio.look.videoStyle ?? VideoStyle();value.scale=1;value.x=0;value.y=0;value.opacity=1;studio.look.videoStyle=value }
             Divider()
             DisclosureGroup("Logo",isExpanded:$videoLogoExpanded) { watermarkControls.padding(.top,12) }
+            DisclosureGroup("Handle",isExpanded:$videoHandleExpanded) { handleControls.padding(.top,12) }
             DisclosureGroup("Frame & Shadow",isExpanded:$videoFrameExpanded) { frameControls.padding(.top,12) }
             DisclosureGroup("Crop",isExpanded:$videoCropExpanded) { CropPanel(studio:studio).padding(.top,12) }
             DisclosureGroup("Glow",isExpanded:$videoGlowExpanded) { glowControls.padding(.top,12) }
@@ -269,6 +271,24 @@ struct Editor: View {
                 DisclosureGroup("Selected Clip",isExpanded:$videoClipExpanded) { trimControls.padding(.top,12) }
             }
         }.font(.system(size:13))
+    }
+    var handleControls:some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text("Your name in a corner of every frame, so a reposted clip still points back to you.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            TextField("@yourname",text:Binding(get:{studio.look.handleText ?? ""},set:{studio.look.handleText=$0;studio.refreshComposition()}))
+                .textFieldStyle(.roundedBorder)
+            if !studio.look.resolvedHandleText.isEmpty {
+                Picker("Corner",selection:Binding(get:{studio.look.resolvedHandlePosition},set:{studio.look.handlePosition=$0;studio.refreshComposition()})) {
+                    ForEach(["Top Left","Top Right","Bottom Left","Bottom Right"],id:\.self) { Text($0).tag($0) }
+                }
+                Text(String(format:"Size · %.1f%%",studio.look.resolvedHandleSize)).font(.caption)
+                Slider(value:Binding(get:{studio.look.resolvedHandleSize},set:{studio.look.handleSize=$0}),in:1.4...9)
+                Text(String(format:"Opacity · %.0f%%",studio.look.resolvedHandleOpacity)).font(.caption)
+                Slider(value:Binding(get:{studio.look.resolvedHandleOpacity},set:{studio.look.handleOpacity=$0}),in:5...100)
+                ColorPicker("Color",selection:Binding(get:{studio.look.resolvedHandleColor.color},set:{studio.look.handleColor=RGB($0);studio.refreshComposition()}),supportsOpacity:false)
+            }
+        }
     }
     var progressControls:some View {
         VStack(alignment:.leading,spacing:14) {

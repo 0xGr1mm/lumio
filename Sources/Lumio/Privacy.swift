@@ -197,7 +197,8 @@ func overlapFraction(_ a:CGRect,_ b:CGRect)->Double {
             privacyFinds = mergedFinds(found,duration:duration)
         }
         privacyFinds = mergedFinds(found,duration:duration)
-        if privacyFinds.isEmpty { message = "Nothing private was found in \(steps) frames. Addresses that appear only for a moment can be hidden by hand with Hide Region." }
+        privacyScanned = true
+        flash(privacyFinds.isEmpty ? "Nothing private found in \(steps) frames":"\(privacyFinds.count) to look at")
     }
     /// Covers one find with a solid block for as long as it is on screen.
     @discardableResult func hideFind(_ id:UUID)->UUID? {
@@ -238,6 +239,10 @@ struct PrivacyPanel: View {
                     .buttonStyle(.borderedProminent).disabled(studio.duration <= 0 || studio.stillImage != nil || studio.privacyScanning)
                 Button { studio.hideRegionAtPlayhead() } label: { Label("Hide Region",systemImage:"square.slash") }
                     .help("Put a block on the picture yourself and drag it over anything private").disabled(studio.duration <= 0 || studio.stillImage != nil)
+            }
+            if studio.privacyScanned,studio.privacyFinds.isEmpty,!studio.privacyScanning {
+                Text("Nothing private was found. If something only flashes by, put a block on it yourself with Hide Region.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
             }
             if !studio.privacyFinds.isEmpty {
                 Divider()

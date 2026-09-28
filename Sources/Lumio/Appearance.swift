@@ -86,6 +86,17 @@ struct Look: Codable, Equatable {
     var resolvedWatermarkPosition: String { let value=watermarkPosition ?? "Bottom Right";return ["Top Left","Top Right","Bottom Left","Bottom Right"].contains(value) ? value:"Bottom Right" }
     var resolvedWatermarkSize: Double { let value=watermarkSize ?? 12;return value.isFinite ? max(3,min(40,value)):12 }
     var resolvedWatermarkOpacity: Double { let value=watermarkOpacity ?? 85;return value.isFinite ? max(5,min(100,value)):85 }
+    /// A name in a corner of every frame: the handle people should look up, without needing a logo file.
+    var handleText: String? = nil
+    var handlePosition: String? = nil
+    var handleSize: Double? = nil
+    var handleOpacity: Double? = nil
+    var handleColor: RGB? = nil
+    var resolvedHandleText: String { String((handleText ?? "").trimmingCharacters(in:.whitespacesAndNewlines).prefix(60)) }
+    var resolvedHandlePosition: String { let value=handlePosition ?? "Bottom Left";return ["Top Left","Top Right","Bottom Left","Bottom Right"].contains(value) ? value:"Bottom Left" }
+    var resolvedHandleSize: Double { let value=handleSize ?? 3.2;return value.isFinite ? max(1.4,min(9,value)):3.2 }
+    var resolvedHandleOpacity: Double { let value=handleOpacity ?? 80;return value.isFinite ? max(5,min(100,value)):80 }
+    var resolvedHandleColor: RGB { (handleColor ?? RGB(0xFFFFFF)).normalized() }
     /// A bar across the bottom that fills as the video plays: its height in pixels at 1080p, 0 for none.
     var progressBar: Double? = nil
     var progressColor: RGB? = nil
@@ -146,6 +157,15 @@ struct Look: Codable, Equatable {
         else { value.watermarkPosition=value.resolvedWatermarkPosition;value.watermarkSize=value.resolvedWatermarkSize;value.watermarkOpacity=value.resolvedWatermarkOpacity }
         value.glow=max(0,min(100,value.glow.isFinite ? value.glow:45));value.glowBlur=max(1,min(120,value.glowBlur.isFinite ? value.glowBlur:45));value.border=max(0,min(10,value.border.isFinite ? value.border:0))
         if !["16:9","9:16","1:1","4:3","4:5"].contains(value.aspect){value.aspect="16:9"};if ![720,1080,1440,2160].contains(value.exportHeight){value.exportHeight=1080}
+        // The bar, the handle and the transparent background are only written back when they are in use,
+        // so an untouched look still compares equal to a fresh one.
+        value.progressBar=value.resolvedProgressBar>0 ? value.resolvedProgressBar:nil
+        if value.progressBar == nil { value.progressColor=nil } else { value.progressColor=value.resolvedProgressColor }
+        if value.resolvedHandleText.isEmpty { value.handleText=nil;value.handlePosition=nil;value.handleSize=nil;value.handleOpacity=nil;value.handleColor=nil }
+        else {
+            value.handleText=value.resolvedHandleText;value.handlePosition=value.resolvedHandlePosition
+            value.handleSize=value.resolvedHandleSize;value.handleOpacity=value.resolvedHandleOpacity;value.handleColor=value.resolvedHandleColor
+        }
         value.videoStyle=(value.videoStyle ?? VideoStyle()).normalized()
         return value
     }
@@ -256,6 +276,23 @@ let backgroundStyles: [BackgroundStyle] = [
         return NSColor(hue:(hue+degrees/360).truncatingRemainder(dividingBy:1),saturation:min(1,saturation*1.05),brightness:max(0.12,min(1,value*brightness)),alpha:alpha)
     }
     return [a,b,rotated(a,by:28,brightness:1.15),rotated(b,by:-24,brightness:0.9),rotated(a,by:-40,brightness:1.05)]
+}
+
+/// Draws a handle as light text with a soft shadow behind it, so it reads on a bright screen as well as a dark one.
+func handleArtwork(_ text:String,fontSize:Double,color:RGB)->CGImage? {
+    guard !text.isEmpty,fontSize>=4 else { return nil }
+    let font=NSFont.systemFont(ofSize:fontSize,weight:.semibold)
+    let measured=(text as NSString).size(withAttributes:[.font:font])
+    let pad=fontSize*0.6
+    let width=Int((measured.width+pad*2).rounded(.up)),height=Int((measured.height+pad*2).rounded(.up))
+    guard width>1,height>1,width<8192,height<8192,
+          let context=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+    let graphics=NSGraphicsContext(cgContext:context,flipped:false)
+    NSGraphicsContext.saveGraphicsState();NSGraphicsContext.current=graphics
+    context.setShadow(offset:CGSize(width:0,height:-fontSize*0.06),blur:fontSize*0.35,color:NSColor.black.withAlphaComponent(0.55).cgColor)
+    (text as NSString).draw(at:CGPoint(x:pad,y:pad),withAttributes:[.font:font,.foregroundColor:color.ns])
+    NSGraphicsContext.restoreGraphicsState()
+    return context.makeImage()
 }
 
 @MainActor final class BackgroundRenderer {
