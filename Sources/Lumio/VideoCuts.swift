@@ -31,7 +31,9 @@ struct VideoClip:Codable,Equatable,Identifiable {
     init(id:UUID=UUID(),sourceStart:Double,sourceEnd:Double,timelineStart:Double=0,speed:Double=1,source:String?=nil,transition:Double?=nil,transitionKind:String?=nil) {
         self.id=id;self.sourceStart=sourceStart;self.sourceEnd=sourceEnd;self.timelineStart=timelineStart;self.speed=speed;self.source=source;self.transition=transition;self.transitionKind=transitionKind
     }
-    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed}
+    // Every one of these is written down: a clip that plays an added recording, or hands over with a
+    // transition, would otherwise come back from a saved project playing the wrong file and cutting flat.
+    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed,source,transition,transitionKind}
     init(from decoder:Decoder) throws {
         let values=try decoder.container(keyedBy:CodingKeys.self)
         id=try values.decodeIfPresent(UUID.self,forKey:.id) ?? UUID()
@@ -39,6 +41,9 @@ struct VideoClip:Codable,Equatable,Identifiable {
         sourceEnd=try values.decode(Double.self,forKey:.sourceEnd)
         timelineStart=try values.decodeIfPresent(Double.self,forKey:.timelineStart) ?? 0
         speed=try values.decodeIfPresent(Double.self,forKey:.speed) ?? 1
+        source=try values.decodeIfPresent(String.self,forKey:.source)
+        transition=try values.decodeIfPresent(Double.self,forKey:.transition)
+        transitionKind=try values.decodeIfPresent(String.self,forKey:.transitionKind)
     }
 }
 

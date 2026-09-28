@@ -41,6 +41,10 @@ struct RecorderPreferences: Codable {
             Task { await verifyLumio(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
         }
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-stress" {
+            Task { await verifyStressOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
+            return
+        }
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-effects" {
             Task { await verifyEffectsOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return

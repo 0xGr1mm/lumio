@@ -862,50 +862,7 @@ func looksPatch(_ data:[UInt8],x:Int,y:Int,size:Int,width:Int=320,height:Int=180
         shapes.previewTask?.cancel()
         lines.append("PASS a recording of another shape keeps its whole frame on the canvas")
         // A fixed sequence of edits, checked after every step: nothing may become infinite, leave the timeline or break undo.
-        var stressSeed:UInt64=UInt64(ProcessInfo.processInfo.environment["LUMIO_STRESS_SEED"].flatMap { UInt64($0) } ?? 0x5EED)
-        func stressRandom(_ bound:Int)->Int { stressSeed=stressSeed&*6364136223846793005&+1442695040888963407;return Int((stressSeed>>33)%UInt64(max(1,bound))) }
-        let stress=Studio();stress.preferences.revealExport=false
-        await stress.load(folder.appendingPathComponent("sample.mp4"))
-        var history:[EditSnapshot]=[]
-        let stressSteps=Int(ProcessInfo.processInfo.environment["LUMIO_STRESS_STEPS"] ?? "") ?? 120
-        for step in 0..<stressSteps {
-            let before=stress.snapshot
-            let action=stressRandom(10)
-            let names=["split","speed","delete clip","add zoom","add annotation","add marker","move clip","paste","undo","delete selection"]
-            switch action {
-            case 0: stress.position=min(stress.duration,Double(stressRandom(300))/100);stress.splitVideo()
-            case 1: if let id=stress.videoClips.first?.id { stress.setClipSpeed(id,to:[0.25,0.5,2,4][stressRandom(4)]) }
-            case 2: if stress.videoClips.count>1,let id=stress.videoClips.last?.id { stress.selectedClip=id;stress.deleteSelectedClip() }
-            case 3: stress.position=min(stress.duration,Double(stressRandom(300))/100);stress.addZoom()
-            case 4: stress.position=min(stress.duration,Double(stressRandom(300))/100);stress.addAnnotation(Annotation.kinds[stressRandom(Annotation.kinds.count)])
-            case 5: stress.position=min(stress.duration,Double(stressRandom(300))/100);stress.addMarker()
-            case 6: if let id=stress.videoClips.last?.id { stress.moveClip(id,toTimelineStart:Double(stressRandom(400))/100) }
-            case 7: stress.copyTimelineSelection();stress.position=min(stress.duration,Double(stressRandom(300))/100);stress.pasteTimelineItem()
-            case 8: stress.undoEdit()
-            default: stress.deleteTimelineSelection()
-            }
-            stress.message=nil
-            history.append(before)
-            let duration=stress.duration
-            guard duration.isFinite,duration>=0,abs(duration-stress.sequenceDuration)<0.001,stress.position>=0,stress.position<=duration+0.001 else{throw stress.failure("step \(step) (\(names[action])) left the timeline at \(duration) s with the playhead at \(stress.position), clips \(stress.videoClips.map{ String(format:"%.2f→%.2f",$0.timelineStart,$0.timelineStart+$0.duration) })")}
-            guard stress.videoClips.allSatisfy({ $0.sourceStart.isFinite && $0.sourceEnd>$0.sourceStart && $0.timelineStart>=0 && $0.rate>0 }),
-                  stress.zooms.allSatisfy({ $0.start>=0 && $0.end<=duration+0.001 && $0.end-$0.start>=0 }),
-                  stress.annotations.allSatisfy({ $0.start>=0 && $0.end<=duration+0.001 && $0.alpha(at:$0.start).isFinite }),
-                  stress.markers.allSatisfy({ $0.time>=0 && $0.time<=duration+0.001 }),
-                  stress.captions.allSatisfy({ $0.start>=0 && $0.end<=duration+0.001 }) else{
-                let clipTrouble=stress.videoClips.filter { !($0.sourceStart.isFinite && $0.sourceEnd>$0.sourceStart && $0.timelineStart>=0 && $0.rate>0) }
-                let zoomTrouble=stress.zooms.filter { !($0.start>=0 && $0.end<=duration+0.001 && $0.end-$0.start>=0) }
-                let noteTrouble=stress.annotations.filter { !($0.start>=0 && $0.end<=duration+0.001) }
-                let markerTrouble=stress.markers.filter { !($0.time>=0 && $0.time<=duration+0.001) }
-                throw stress.failure("step \(step) (\(names[action])) left an item outside the \(duration) s timeline · clips \(clipTrouble) · zooms \(zoomTrouble) · annotations \(noteTrouble) · markers \(markerTrouble)")
-            }
-        }
-        // Undoing everything walks back through the same states it came from.
-        var undone=0
-        while !stress.undoStack.isEmpty,undone<400 { stress.undoEdit();undone+=1 }
-        guard stress.videoClips.count>=1,stress.duration>0,stress.duration.isFinite else{throw stress.failure("undoing every step left \(stress.videoClips.count) clips and \(stress.duration) s")}
-        stress.previewTask?.cancel()
-        lines.append("PASS \(stressSteps) mixed edits keep the timeline, its items and undo consistent")
+        lines.append(contentsOf:try await verifyStress(folder:folder))
         // Shortening a clip must leave a preview that still renders the picture, not a black frame.
         let trimStudio=Studio();trimStudio.preferences.revealExport=false
         await trimStudio.load(folder.appendingPathComponent("sample.mp4"))
