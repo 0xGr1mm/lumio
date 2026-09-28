@@ -5,7 +5,7 @@ import SwiftUI
 /// An arrow, box, text label, blurred region or spotlight shown over the recording for a time range.
 /// It is placed on the video itself, so it stays on the same spot while zooms and pans move the view.
 struct Annotation: Codable, Equatable, Identifiable {
-    static let kinds = ["Arrow","Box","Text","Blur","Hide","Spotlight"]
+    static let kinds = ["Arrow","Box","Text","Sticker","Blur","Hide","Spotlight"]
     var id = UUID()
     var kind = "Arrow"
     var start: Double
@@ -28,6 +28,7 @@ struct Annotation: Codable, Equatable, Identifiable {
         switch kind {
         case "Box": return "rectangle"
         case "Text": return "textformat"
+        case "Sticker": return "face.smiling"
         case "Blur": return "eye.slash"
         case "Hide": return "square.slash"
         case "Spotlight": return "light.max"
@@ -42,6 +43,16 @@ struct Annotation: Codable, Equatable, Identifiable {
     }
 }
 
+/// A sticker or a label arrives with a small overshoot in its first third of a second, which reads as a pop.
+/// It starts at nothing and settles at its own size, so nothing has to be animated by hand.
+func annotationPop(_ a:Annotation,at time:Double)->Double {
+    guard a.kind == "Sticker" || a.kind == "Text" else { return 1 }
+    let t = (time-a.start)/0.3
+    guard t >= 0, t < 1 else { return t >= 1 ? 1 : 0 }
+    let overshoot = 1.70158
+    return 1+(overshoot+1)*pow(t-1,3)+overshoot*pow(t-1,2)
+}
+
 func normalizedAnnotations(_ items:[Annotation],duration:Double,limit:Int=2_000)->[Annotation] {
     guard duration.isFinite, duration > 0 else { return [] }
     var ids = Set<UUID>()
@@ -53,7 +64,7 @@ func normalizedAnnotations(_ items:[Annotation],duration:Double,limit:Int=2_000)
         guard a.end-a.start >= 0.1 else { return nil }
         a.x = max(-1,min(2,a.x)); a.y = max(-1,min(2,a.y)); a.width = max(-2,min(2,a.width)); a.height = max(-2,min(2,a.height))
         a.color = a.color.normalized(); a.text = String(a.text.prefix(200))
-        a.thickness = max(1,min(40,a.thickness)); a.fontSize = max(12,min(160,a.fontSize)); a.strength = max(0,min(1,a.strength))
+        a.thickness = max(1,min(40,a.thickness)); a.fontSize = max(12,min(320,a.fontSize)); a.strength = max(0,min(1,a.strength))
         if !ids.insert(a.id).inserted { a.id = UUID() }
         return a
     }
@@ -104,11 +115,17 @@ func annotated(_ source:CIImage,time:Double,annotations:[Annotation],art:Overlay
             image = image.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:dimmed,kCIInputMaskImageKey:mask(region,level:1).composited(over:black)])
         }
     }
-    for a in active where a.kind == "Arrow" || a.kind == "Box" || a.kind == "Text" {
-        let alpha = a.alpha(at:time)
-        guard alpha > 0.001, let drawn = art.annotation(a,frame:size) else { continue }
+    for a in active where a.kind == "Arrow" || a.kind == "Box" || a.kind == "Text" || a.kind == "Sticker" {
+        let alpha = a.alpha(at:time), pop = annotationPop(a,at:time)
+        guard alpha > 0.001, pop > 0.02, let drawn = art.annotation(a,frame:size) else { continue }
         var layer = CIImage(cgImage:drawn.image).transformed(by:CGAffineTransform(scaleX:1/drawn.scale,y:1/drawn.scale))
         layer = layer.transformed(by:CGAffineTransform(translationX:drawn.origin.x,y:drawn.origin.y))
+        if pop < 0.999 {
+            let centre = CGPoint(x:layer.extent.midX,y:layer.extent.midY)
+            layer = layer.transformed(by:CGAffineTransform(translationX:-centre.x,y:-centre.y)
+                .concatenating(CGAffineTransform(scaleX:pop,y:pop))
+                .concatenating(CGAffineTransform(translationX:centre.x,y:centre.y)))
+        }
         if alpha < 0.999 { layer = layer.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:alpha)]) }
         image = layer.composited(over:image)
     }
@@ -123,6 +140,12 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
     let line = a.thickness*unit
     let pad = max(line*4,24*unit)
     var bounds = annotationPixels(a.rect,in:size)
+    if a.kind == "Sticker" {
+        let font = NSFont.systemFont(ofSize:a.fontSize*unit)
+        let measured = (a.text as NSString).size(withAttributes:[.font:font])
+        let center = CGPoint(x:bounds.midX,y:bounds.midY)
+        bounds = CGRect(x:center.x-measured.width/2,y:center.y-measured.height/2,width:max(1,measured.width),height:max(1,measured.height))
+    }
     if a.kind == "Text" {
         let font = NSFont.systemFont(ofSize:a.fontSize*unit,weight:.bold)
         let measured = (a.text as NSString).size(withAttributes:[.font:font])
@@ -138,6 +161,13 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
     context.setShadow(offset:CGSize(width:0,height:-3*unit),blur:10*unit,color:NSColor.black.withAlphaComponent(0.45).cgColor)
     let color = a.color.ns.cgColor
     switch a.kind {
+    case "Sticker":
+        // Emoji carry their own colours, so the glyph is drawn as it is, with only the shadow behind it.
+        let graphics = NSGraphicsContext(cgContext:context,flipped:false)
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = graphics
+        let font = NSFont.systemFont(ofSize:a.fontSize*unit)
+        (a.text as NSString).draw(at:bounds.origin,withAttributes:[.font:font])
+        NSGraphicsContext.restoreGraphicsState()
     case "Box":
         let path = CGPath(roundedRect:bounds,cornerWidth:min(14*unit,bounds.width/2),cornerHeight:min(14*unit,bounds.height/2),transform:nil)
         context.addPath(path); context.setStrokeColor(color); context.setLineWidth(line); context.strokePath()
@@ -181,10 +211,20 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
         case "Text": item.color = RGB(0xFFD60A); item.x = 0.35; item.y = 0.08; item.width = 0.3; item.height = 0.08
         case "Blur", "Spotlight": item.x = 0.3; item.y = 0.3; item.width = 0.4; item.height = 0.3
         case "Hide": item.color = RGB(0x101216); item.x = 0.32; item.y = 0.42; item.width = 0.36; item.height = 0.1
+        case "Sticker": item.text = "🚀"; item.fontSize = 130; item.x = 0.42; item.y = 0.3; item.width = 0.16; item.height = 0.16
         default: break
         }
         annotations.append(item); focusTimeline(.annotation,id:item.id)
         player.pause(); playing = false; position = start+min(0.3,(item.end-start)/2); seek(position)
+    }
+    /// The line a short video opens with: big, across the top, for the first seconds, and it pops in.
+    func addHookText(_ text:String="Watch this") {
+        guard duration > 0, stillImage == nil else { return }
+        var item = Annotation(kind:"Text",start:0,end:min(duration,2.6))
+        item.text = text; item.fontSize = 88; item.color = RGB(0x111111)
+        item.x = 0.1; item.y = 0.07; item.width = 0.8; item.height = 0.12
+        annotations.append(item); focusTimeline(.annotation,id:item.id)
+        position = 0.5; seek(position); refreshComposition()
     }
     func setAnnotationRange(_ id:UUID,to range:TimelineRange) {
         guard let i = annotations.firstIndex(where:{ $0.id == id }) else { return }
@@ -192,28 +232,49 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
     }
 }
 
+/// Emoji that get used over a screen recording: a launch, a win, a warning, a look-here.
+let stickerChoices = ["🚀","💎","🔥","📈","⚡️","🤝","🎯","👀","✅","❌","🧠","😂","🙌","💡","⚠️","🪙","🐳","🦄","📉","🤯"]
+
 struct AnnotationPanel: View {
     @ObservedObject var studio: Studio
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             Text("Add at playhead").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing:8) {
+            LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:8),count:4),spacing:8) {
                 ForEach(Annotation.kinds,id:\.self) { kind in
                     Button { studio.addAnnotation(kind) } label: {
                         VStack(spacing:4) { Image(systemName:Annotation(kind:kind,start:0,end:1).symbol).font(.system(size:15)); Text(kind).font(.system(size:9)) }
-                            .frame(width:48,height:44).contentShape(Rectangle())
+                            .frame(maxWidth:.infinity).frame(height:44).contentShape(Rectangle())
                     }.buttonStyle(.plain).background(.white.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius:8)).help("Add \(kind.lowercased()) at the playhead")
                 }
+                Button { studio.addHookText() } label: {
+                    VStack(spacing:4) { Image(systemName:"text.badge.star").font(.system(size:15)); Text("Hook").font(.system(size:9)) }
+                        .frame(maxWidth:.infinity).frame(height:44).contentShape(Rectangle())
+                }.buttonStyle(.plain).background(accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius:8))
+                    .help("A big line across the top for the first seconds, the way short videos open")
             }.disabled(studio.stillImage != nil || studio.duration <= 0)
             // Bound by id, so deleting the selected annotation while the panel is open cannot leave a stale index behind.
             if let item = studio.annotations.first(where:{ $0.id == studio.selectedAnnotation }) {
                 let id = item.id, kind = item.kind
                 Text(kind == "Arrow" ? "Drag on the preview from the tail to the tip. The arrow stays on that spot when the view zooms.":"Drag on the preview to place it, or drag inside it to move it. It stays on that spot when the view zooms.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                if kind == "Sticker" {
+                    LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:6),count:6),spacing:6) {
+                        ForEach(stickerChoices,id:\.self) { emoji in
+                            Button { studio.update(\.annotations,id:id) { $0.text = emoji };studio.refreshComposition() } label: {
+                                Text(emoji).font(.system(size:20)).frame(maxWidth:.infinity).frame(height:30).contentShape(Rectangle())
+                                    .background(item.text == emoji ? accent.opacity(0.18):Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:7))
+                            }.buttonStyle(.plain).help("Use \(emoji)")
+                        }
+                    }
+                    TextField("Any emoji or symbol",text:studio.binding(\.annotations,id:id,\.text,fallback:item.text)).textFieldStyle(.roundedBorder)
+                }
+                if kind == "Text" || kind == "Sticker" {
+                    Text(String(format:"Size · %.0f",item.fontSize)).font(.caption)
+                    Slider(value:studio.binding(\.annotations,id:id,\.fontSize,fallback:item.fontSize),in:24...300)
+                }
                 if kind == "Text" {
                     TextField("Text",text:studio.binding(\.annotations,id:id,\.text,fallback:item.text)).textFieldStyle(.roundedBorder)
-                    Text(String(format:"Size · %.0f",item.fontSize)).font(.caption)
-                    Slider(value:studio.binding(\.annotations,id:id,\.fontSize,fallback:item.fontSize),in:18...120)
                 }
                 if kind == "Hide" {
                     ColorPicker("Block Color",selection:Binding(get:{ item.color.color },set:{ color in studio.update(\.annotations,id:id) { $0.color = RGB(color) } }),supportsOpacity:false)

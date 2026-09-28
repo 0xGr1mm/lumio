@@ -12,6 +12,7 @@ struct Editor: View {
     @State var videoGlowExpanded=false
     @State var videoClipExpanded=false
     @State var videoCropExpanded=false
+    @State var videoProgressExpanded=false
     var body:some View {
         VStack(spacing:0) {
             header
@@ -261,10 +262,28 @@ struct Editor: View {
             DisclosureGroup("Frame & Shadow",isExpanded:$videoFrameExpanded) { frameControls.padding(.top,12) }
             DisclosureGroup("Crop",isExpanded:$videoCropExpanded) { CropPanel(studio:studio).padding(.top,12) }
             DisclosureGroup("Glow",isExpanded:$videoGlowExpanded) { glowControls.padding(.top,12) }
+            DisclosureGroup("Progress Bar",isExpanded:$videoProgressExpanded) { progressControls.padding(.top,12) }
             if studio.stillImage == nil {
                 DisclosureGroup("Selected Clip",isExpanded:$videoClipExpanded) { trimControls.padding(.top,12) }
             }
         }.font(.system(size:13))
+    }
+    var progressControls:some View {
+        VStack(alignment:.leading,spacing:14) {
+            Text("A bar across the bottom that fills as the video plays. Short videos keep more viewers with one.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+            HStack(spacing:8) {
+                ForEach([("None",0.0),("Thin",6.0),("Bold",14.0)],id:\.0) { name,height in
+                    Button(name) { studio.look.progressBar=height;studio.refreshComposition() }
+                        .buttonStyle(.bordered).tint(abs(studio.look.resolvedProgressBar-height)<0.01 ? accent: nil)
+                }
+            }.controlSize(.small)
+            if studio.look.resolvedProgressBar>0 {
+                Text(String(format:"Height · %.0f px",studio.look.resolvedProgressBar)).font(.caption)
+                Slider(value:Binding(get:{studio.look.resolvedProgressBar},set:{studio.look.progressBar=$0}),in:2...40)
+                ColorPicker("Bar Color",selection:Binding(get:{studio.look.resolvedProgressColor.color},set:{studio.look.progressColor=RGB($0);studio.refreshComposition()}),supportsOpacity:false)
+            }
+        }
     }
     var watermarkControls:some View {
         VStack(alignment:.leading,spacing:16) {

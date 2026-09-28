@@ -69,6 +69,12 @@ struct MotionSettings: Codable, Equatable {
     var hideTyping = false
     var cameraStyle: CameraStyle? = CameraStyle()
     var zoomOnTyping: Bool? = nil
+    /// Dims everything but a circle around the pointer, 0…100. Off at zero.
+    var spotlight: Double? = nil
+    /// Radius of that circle as a percentage of the video's shorter side.
+    var spotlightSize: Double? = nil
+    var resolvedSpotlight: Double { let value=spotlight ?? 0;return value.isFinite ? max(0,min(100,value)):0 }
+    var resolvedSpotlightSize: Double { let value=spotlightSize ?? 26;return value.isFinite ? max(8,min(70,value)):26 }
     func normalized() -> MotionSettings {
         var value=self
         if ["Default","macOS","Tabler","Lucide","Pixel Outline","Bold Arrow","Thin Arrow","Tint"].contains(value.style) {value.style="Classic Outline"}
@@ -80,6 +86,8 @@ struct MotionSettings: Codable, Equatable {
         value.color=value.color.normalized();value.blurAmount=max(0,min(1,value.blurAmount.isFinite ? value.blurAmount:0.8));value.blurCursor=max(0,min(1,value.blurCursor.isFinite ? value.blurCursor:1));value.blurScreen=max(0,min(1,value.blurScreen.isFinite ? value.blurScreen:0.8));value.blurZoom=max(0,min(1,value.blurZoom.isFinite ? value.blurZoom:1));value.snap=max(0,min(1,value.snap.isFinite ? value.snap:0.25));value.blurQuality=max(0,min(2,value.blurQuality))
         value.stiffness=max(20,min(1000,value.stiffness.isFinite ? value.stiffness:470));value.damping=max(1,min(150,value.damping.isFinite ? value.damping:70));value.mass=max(0.2,min(10,value.mass.isFinite ? value.mass:3));value.threshold=max(0,min(1000,value.threshold.isFinite ? value.threshold:500))
         value.cameraStyle=(value.cameraStyle ?? CameraStyle()).normalized()
+        if value.spotlight != nil { value.spotlight=value.resolvedSpotlight }
+        if value.spotlightSize != nil { value.spotlightSize=value.resolvedSpotlightSize }
         return value
     }
 }

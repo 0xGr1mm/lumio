@@ -105,6 +105,19 @@ struct CursorPanel:View {
                 }.padding(.top,12)
             }
             DisclosureGroup("Click Sound") { Toggle("Click Sounds",isOn:$studio.motion.clickSound).padding(.top,12) }
+            DisclosureGroup("Spotlight") {
+                VStack(alignment:.leading,spacing:14) {
+                    Text("Dims the screen except for a circle around the pointer, so an eye goes where the hand is.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                    MotionSlider(title:"Dim",value:Binding(get:{studio.motion.resolvedSpotlight},set:{studio.motion.spotlight=$0}),range:0...100,suffix:"%")
+                    MotionSlider(title:"Size",value:Binding(get:{studio.motion.resolvedSpotlightSize},set:{studio.motion.spotlightSize=$0}),range:8...70,suffix:"%")
+                    HStack(spacing:8) {
+                        Button("Off") { studio.motion.spotlight=0 }
+                        Button("Subtle") { studio.motion.spotlight=45;studio.motion.spotlightSize=34 }
+                        Button("Strong") { studio.motion.spotlight=85;studio.motion.spotlightSize=22 }
+                    }.controlSize(.small)
+                }.padding(.top,12)
+            }
             Divider();Text("Visibility").foregroundStyle(.secondary)
             Toggle("Hide Idle",isOn:$studio.motion.hideIdle)
             if studio.motion.hideIdle { MotionSlider(title:"Idle Delay",value:$studio.motion.idleDelay,range:0.3...5,suffix:" s") }

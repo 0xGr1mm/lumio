@@ -54,6 +54,9 @@ struct FrameDesign {
     var personMasks:PersonMaskMaker?=nil
     /// Stretches played by the recording the editor was opened with; only there is its pointer drawn.
     var cursorRanges:[RenderTimeRange]=[]
+    /// Height in canvas pixels of the bar that fills as the video plays, and its colour. Zero for none.
+    var progressHeight:Double=0
+    var progressColor:RGB=RGB(0xBFEE63)
 }
 /// One cross dissolve: when it begins, how long it lasts, and which track carries the incoming clip.
 struct DissolveSpan {
@@ -403,6 +406,22 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
             }
             if let cursorLayer { content=cursorLayer.composited(over:content) }
         }
+        // A spotlight on the pointer: everything else is dimmed, so an eye goes where the hand is.
+        if s.resolvedSpotlight>0,onOpenedRecording,let p=pointerAt(time,samples:d.samples) {
+            let point=placement.point(p,current)
+            let radius=max(24.0,s.resolvedSpotlightSize/100*min(r.width,r.height)*current.scale)
+            let keep=1-s.resolvedSpotlight/100*0.85
+            if let falloff=CIFilter(name:"CIRadialGradient",parameters:[
+                "inputCenter":CIVector(x:point.x,y:point.y),
+                "inputRadius0":radius*0.7,"inputRadius1":radius,
+                "inputColor0":CIColor(red:1,green:1,blue:1),"inputColor1":CIColor(red:0,green:0,blue:0)])?.outputImage?.cropped(to:canvas) {
+                let dimmed=content.applyingFilter("CIColorMatrix",parameters:[
+                    "inputRVector":CIVector(x:keep,y:0,z:0,w:0),
+                    "inputGVector":CIVector(x:0,y:keep,z:0,w:0),
+                    "inputBVector":CIVector(x:0,y:0,z:keep,w:0)])
+                content=content.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:dimmed,kCIInputMaskImageKey:falloff]).cropped(to:canvas)
+            }
+        }
         let clear=CIImage(color:.clear).cropped(to:canvas)
         content=content.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:CIImage(cgImage:d.mask)])
         var result=content.composited(over:backdrop)
@@ -472,6 +491,19 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
             placed=placed.transformed(by:CGAffineTransform(translationX:d.watermarkRect.midX-placed.extent.width/2-placed.extent.minX,y:d.watermarkRect.midY-placed.extent.height/2-placed.extent.minY))
             if d.watermarkOpacity<0.999 { placed=opacity(placed,d.watermarkOpacity) }
             final=placed.composited(over:final).cropped(to:canvas)
+        }
+        if d.progressHeight>=1,d.duration>0 {
+            let fraction=max(0,min(1,time/d.duration))
+            let height=min(canvas.height/8,d.progressHeight)
+            let track=CGRect(x:0,y:0,width:canvas.width,height:height)
+            let filled=CGRect(x:0,y:0,width:canvas.width*fraction,height:height)
+            let shade=CIImage(color:CIColor(red:0,green:0,blue:0,alpha:0.35)).cropped(to:track)
+            final=shade.composited(over:final)
+            if filled.width>=1 {
+                let bar=CIImage(color:CIColor(red:d.progressColor.r,green:d.progressColor.g,blue:d.progressColor.b)).cropped(to:filled)
+                final=bar.composited(over:final)
+            }
+            final=final.cropped(to:canvas)
         }
         // The fade is applied last, so the background, camera and captions all dip to black together.
         if d.fadeIn>0 || d.fadeOut>0 || !d.dips.isEmpty {

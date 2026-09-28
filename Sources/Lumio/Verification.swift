@@ -1163,6 +1163,7 @@ func looksPatch(_ data:[UInt8],x:Int,y:Int,size:Int,width:Int=320,height:Int=180
         lines.append("PASS timeline items copy, cut, paste at the playhead, duplicate and delete; repeated pastes line up after each other")
         lines.append(contentsOf:try await verifyLooks(folder:folder))
         lines.append(contentsOf:try await verifyPrivacy(folder:folder))
+        lines.append(contentsOf:try await verifyEffects(folder:folder))
         try lines.joined(separator:"\n").write(to:folder.appendingPathComponent("verification.txt"),atomically:true,encoding:.utf8)
         print(lines.joined(separator:"\n")); exit(0)
     } catch {
