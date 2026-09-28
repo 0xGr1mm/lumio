@@ -123,6 +123,25 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                 mixEntries.append((destination,0.7,"Click",0,duration))
             }
         }
+        // A cut carries better with a short rush under it. It starts a little before the cut, the way it is mixed by hand.
+        let cutTimes=videoClips.map(\.timelineStart).filter { $0>0.05 && $0<duration-0.05 }.sorted()
+        if motion.resolvedCutSound,!cutTimes.isEmpty,let whooshURL=Bundle.main.url(forResource:"whoosh",withExtension:"wav",subdirectory:"Audio") {
+            let whooshAsset=AVURLAsset(url:whooshURL)
+            if let whooshSource=try await whooshAsset.loadTracks(withMediaType:.audio).first,
+               let destination=composition.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) {
+                let length=(try await whooshAsset.load(.duration)).seconds
+                var lastEnd = -1.0
+                for cut in cutTimes {
+                    let at=max(0,cut-length*0.55)
+                    guard at>=lastEnd else { continue }
+                    let piece=min(length,duration-at)
+                    guard piece>0.02 else { continue }
+                    try destination.insertTimeRange(CMTimeRange(start:.zero,duration:CMTime(seconds:piece,preferredTimescale:600)),of:whooshSource,at:CMTime(seconds:at,preferredTimescale:600))
+                    lastEnd=at+piece
+                }
+                mixEntries.append((destination,0.55,"Cut",0,duration))
+            }
+        }
         let voiceRanges=mixEntries.filter{$0.kind=="Voiceover"}.map{($0.start,$0.end)}
         let audioMix:AVMutableAudioMix? = mixEntries.isEmpty ? nil:AVMutableAudioMix()
         if let audioMix {

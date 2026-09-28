@@ -83,8 +83,18 @@ struct QuickEditStep: Identifiable, Equatable {
     }
 }
 
+/// The keys worth knowing, in the order they come up while finishing a recording.
+let editorKeyHints:[(String,String)] = [
+    ("Space","Play or pause"),("← →","One frame back or forward"),
+    ("B","Blade · cut at the playhead"),("A","Back to the arrow"),
+    ("Z","Zoom at the playhead"),("S","Sticker"),("H","Hide a region"),("M","Marker"),
+    (", ."," Jump to the marker before or after"),("⌫","Delete what is selected"),
+    ("⌘B","Split the clip"),("⌘E","Export"),("⌘S","Save the project"),("⌘Z","Undo")
+]
+
 struct QuickPanel: View {
     @ObservedObject var studio: Studio
+    @State private var keysExpanded = false
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             Text("One pass over the recording: dead air out, captions in, zooms on your clicks, a check for anything private. Undo takes any of it back.")
@@ -149,7 +159,21 @@ struct QuickPanel: View {
                 }
             }.disabled(studio.source == nil)
             HStack(spacing:8) {
-                Button { studio.startExport() } label: { Label("Export \(studio.stillImage == nil ? studio.exportSettings.resolvedFormat:"PNG")…",systemImage:"square.and.arrow.up") }
+                DisclosureGroup("Keys",isExpanded:$keysExpanded) {
+                VStack(alignment:.leading,spacing:5) {
+                    ForEach(editorKeyHints,id:\.0) { key,what in
+                        HStack(spacing:8) {
+                            Text(key).font(.system(size:10,weight:.semibold,design:.monospaced))
+                                .padding(.horizontal,6).padding(.vertical,2)
+                                .background(Color.white.opacity(0.09)).clipShape(RoundedRectangle(cornerRadius:5))
+                                .frame(width:52,alignment:.leading)
+                            Text(what).font(.system(size:11)).foregroundStyle(.secondary)
+                            Spacer(minLength:0)
+                        }
+                    }
+                }.padding(.top,10)
+            }.font(.system(size:12))
+            Button { studio.startExport() } label: { Label("Export \(studio.stillImage == nil ? studio.exportSettings.resolvedFormat:"PNG")…",systemImage:"square.and.arrow.up") }
                     .disabled(studio.source == nil || studio.busy)
                 if studio.stillImage == nil {
                     Button { Task { await studio.exportFrame() } } label: { Label("Thumbnail",systemImage:"photo") }

@@ -69,6 +69,9 @@ struct MotionSettings: Codable, Equatable {
     var hideTyping = false
     var cameraStyle: CameraStyle? = CameraStyle()
     var zoomOnTyping: Bool? = nil
+    /// Plays a short rush under every cut.
+    var cutSound: Bool? = nil
+    var resolvedCutSound: Bool { cutSound ?? false }
     /// How hard the picture snaps in at a cut, 0…100. Off at zero.
     var punchOnCut: Double? = nil
     var resolvedPunch: Double { let value=punchOnCut ?? 0;return value.isFinite ? max(0,min(100,value)):0 }

@@ -87,6 +87,34 @@ import Foundation
     bar.previewTask?.cancel()
     lines.append("PASS the progress bar fills across the bottom as the video plays and leaves no trace when off")
 
+    // A whoosh under every cut: one more audio track, with a piece of sound landing just before each cut.
+    let sounded=Studio();sounded.preferences.revealExport=false
+    await sounded.load(folder.appendingPathComponent("sample.mp4"))
+    sounded.videoClips=[VideoClip(sourceStart:0,sourceEnd:1.5,timelineStart:0),VideoClip(sourceStart:1.5,sourceEnd:3,timelineStart:1.5)]
+    sounded.synchronizeVideoSequence(refresh:false)
+    let (quietAsset,_,_)=try await sounded.makeEditingComposition(asset:AVURLAsset(url:sounded.source!),size:CGSize(width:320,height:180),fps:30)
+    let quietTracks=try await quietAsset.loadTracks(withMediaType:.audio).count
+    sounded.motion.cutSound=true
+    let (loudAsset,_,loudMix)=try await sounded.makeEditingComposition(asset:AVURLAsset(url:sounded.source!),size:CGSize(width:320,height:180),fps:30)
+    let loudTracks=try await loudAsset.loadTracks(withMediaType:.audio)
+    guard loudTracks.count==quietTracks+1 else { throw effectsFailure("the cut sound did not get its own track: \(quietTracks) → \(loudTracks.count)") }
+    guard let whooshTrack=loudTracks.last else { throw effectsFailure("no cut sound track") }
+    let segments=try await whooshTrack.load(.segments).filter { !$0.isEmpty }
+    guard let piece=segments.first else { throw effectsFailure("the cut sound track is empty") }
+    let landed=piece.timeMapping.target.start.seconds
+    guard landed<1.5,landed>1.1 else { throw effectsFailure("the cut sound does not land at the cut: \(landed) s") }
+    guard loudMix != nil else { throw effectsFailure("the cut sound is not in the mix") }
+    // With one clip there is no cut, so nothing is added: the count is the same with the setting on or off.
+    sounded.videoClips=[VideoClip(sourceStart:0,sourceEnd:3,timelineStart:0)];sounded.synchronizeVideoSequence(refresh:false)
+    let (singleLoud,_,_)=try await sounded.makeEditingComposition(asset:AVURLAsset(url:sounded.source!),size:CGSize(width:320,height:180),fps:30)
+    let singleLoudTracks=try await singleLoud.loadTracks(withMediaType:.audio).count
+    sounded.motion.cutSound=false
+    let (singleQuiet,_,_)=try await sounded.makeEditingComposition(asset:AVURLAsset(url:sounded.source!),size:CGSize(width:320,height:180),fps:30)
+    let singleQuietTracks=try await singleQuiet.loadTracks(withMediaType:.audio).count
+    guard singleLoudTracks==singleQuietTracks else { throw effectsFailure("a cut sound was added where there is no cut: \(singleQuietTracks) → \(singleLoudTracks)") }
+    sounded.previewTask?.cancel()
+    lines.append("PASS a whoosh is mixed in just before every cut, and left out when there is none")
+
     // The thumbnail: the frame under the playhead, at the export size, with everything the video would carry.
     let thumb=Studio();thumb.preferences.revealExport=false
     await thumb.load(folder.appendingPathComponent("sample.mp4"))

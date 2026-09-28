@@ -169,6 +169,9 @@ struct RecorderPreferences: Codable {
             case "t": studio.timelineTool = "trim"
             case "p": studio.timelineTool = "position"
             case "m": studio.addMarker()
+            case "z": studio.addZoom()
+            case "s": studio.addAnnotation("Sticker")
+            case "h": studio.hideRegionAtPlayhead()
             case ",": studio.goToMarker(forward:false)
             case ".": studio.goToMarker(forward:true)
             default: return false

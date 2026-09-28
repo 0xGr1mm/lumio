@@ -34,3 +34,18 @@ with wave.open(click+'.new','wb') as f:
         data.append(struct.pack('<h',int(v*32767)))
     f.writeframes(b''.join(data))
 os.replace(click+'.new',click)
+
+# A short rush of filtered noise that rises and falls: the sound a cut wants under it.
+whoosh=os.path.join(ROOT,'whoosh.wav')
+with wave.open(whoosh+'.new','wb') as f:
+    f.setnchannels(1);f.setsampwidth(2);f.setframerate(RATE)
+    random.seed('whoosh');data=[];length=0.34;previous=0.0
+    for i in range(int(RATE*length)):
+        t=i/RATE;position=t/length
+        # A one-pole filter that opens and closes again, so the noise sweeps up and back down.
+        cutoff=0.06+0.5*math.sin(math.pi*position)
+        previous=previous+cutoff*((random.random()*2-1)-previous)
+        envelope=math.sin(math.pi*position)**1.6
+        data.append(struct.pack('<h',int(max(-1,min(1,previous*envelope*0.55))*32767)))
+    f.writeframes(b''.join(data))
+os.replace(whoosh+'.new',whoosh)

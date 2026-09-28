@@ -114,7 +114,14 @@ struct CursorPanel:View {
                     Text("Shows a ring that expands from every click.").font(.caption).foregroundStyle(.secondary)
                 }.padding(.top,12)
             }
-            DisclosureGroup("Click Sound") { Toggle("Click Sounds",isOn:$studio.motion.clickSound).padding(.top,12) }
+            DisclosureGroup("Sound") {
+                VStack(alignment:.leading,spacing:10) {
+                    Toggle("Click Sounds",isOn:$studio.motion.clickSound)
+                    Toggle("Whoosh on Cuts",isOn:Binding(get:{studio.motion.resolvedCutSound},set:{studio.motion.cutSound=$0}))
+                    Text("Both are mixed into the export, under whatever the recording already carries.")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal:false,vertical:true)
+                }.padding(.top,12)
+            }
             DisclosureGroup("Spotlight") {
                 VStack(alignment:.leading,spacing:14) {
                     Text("Dims the screen except for a circle around the pointer, so an eye goes where the hand is.")
