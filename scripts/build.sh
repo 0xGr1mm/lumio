@@ -12,7 +12,8 @@ swift build --disable-sandbox -c release
 python3 scripts/generate-audio.py
 mkdir -p "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/MacOS "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources
 if [ -z "${LUMIO_TEST_BUILD:-}" ]; then
-  ./scripts/build-icon.sh
+  # The icon is only redrawn when its generator is present; otherwise the one in Resources is used as is.
+  if [ -f scripts/round-icon.py ]; then ./scripts/build-icon.sh; fi
   cp Resources/Lumio.icns "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Lumio.icns
 fi
 # LUMIO_TEST_BUILD=1 leaves the heavy artwork out: it is only for running the verification suite locally,
