@@ -40,6 +40,8 @@ struct TimelineEditor:View {
                 toolButton("trim","T","arrow.left.and.right")
                 toolButton("position","P","move.3d")
                 Button { studio.splitVideo() } label:{Image(systemName:"scissors")}.disabled(studio.duration <= 0).help("Split at Playhead · ⌘B")
+                Button { studio.freezeFrame() } label:{Image(systemName:"snowflake")}.disabled(studio.duration <= 0 || studio.stillImage != nil)
+                    .help("Freeze Frame · F · holds the frame under the playhead for two seconds").accessibilityLabel("Freeze Frame")
                 Button { studio.duplicateTimelineSelection() } label:{Image(systemName:"square.on.square")}.disabled(studio.focusedTimelineItem == nil).help("Duplicate Selected Item · ⌘D").accessibilityLabel("Duplicate Selected Item")
                 Button { studio.deleteTimelineSelection() } label:{Image(systemName:"trash")}.disabled(studio.focusedTimelineItem == nil).help("Delete Selected Item · ⌫").accessibilityLabel("Delete Selected Item")
                 Button { studio.pasteTimelineItem() } label:{Image(systemName:"doc.on.clipboard")}.disabled(studio.timelineClipboard == nil)
@@ -372,12 +374,16 @@ struct VideoClipBlock:View {
         if let clip=studio.videoClips.first(where:{$0.id == clipID}) {
             let clipWidth=max(12,totalWidth*clip.duration/max(0.01,studio.duration))
             ZStack(alignment:.leading) {
-                RoundedRectangle(cornerRadius:6).fill(Color.blue.opacity(studio.selectedClip == clipID ? 0.66:0.38))
+                RoundedRectangle(cornerRadius:6).fill((clip.isHold ? Color.teal:Color.blue).opacity(studio.selectedClip == clipID ? 0.66:0.38))
                 filmstrip(clip:clip,clipWidth:clipWidth)
                 RoundedRectangle(cornerRadius:6).stroke(studio.selectedClip == clipID ? accent:Color.blue.opacity(0.9),lineWidth:studio.selectedClip == clipID ? 2:1)
                 VStack(alignment:.leading,spacing:2) {
-                    Text("Clip \((studio.videoClips.firstIndex(where:{$0.id == clipID}) ?? 0)+1)").fontWeight(.semibold)
-                    Text(String(format:"Source %.2f–%.2f · Position %.2f",clip.sourceStart,clip.sourceEnd,clip.timelineStart)+(abs(clip.speed-1)>0.001 ? String(format:" · %g×",clip.speed):"")).foregroundStyle(.white.opacity(0.75))
+                    HStack(spacing:4) {
+                        if clip.isHold { Image(systemName:"snowflake").font(.system(size:9)) }
+                        Text(clip.isHold ? "Held Frame":"Clip \((studio.videoClips.firstIndex(where:{$0.id == clipID}) ?? 0)+1)").fontWeight(.semibold)
+                    }
+                    Text(clip.isHold ? String(format:"%.1f s · from %.2f s",clip.duration,clip.sourceStart)
+                                     : String(format:"Source %.2f–%.2f · Position %.2f",clip.sourceStart,clip.sourceEnd,clip.timelineStart)+(abs(clip.speed-1)>0.001 ? String(format:" · %g×",clip.speed):"")).foregroundStyle(.white.opacity(0.75))
                 }.font(.system(size:9)).padding(.horizontal,10).allowsHitTesting(false)
                 Rectangle().fill(Color.white.opacity(0.001))
                     .frame(width:max(1,clipWidth-28),height:54).offset(x:14)
@@ -393,6 +399,11 @@ struct VideoClipBlock:View {
             .zIndex(studio.selectedClip == clipID ? 10:Double(studio.videoClips.firstIndex(where:{$0.id == clipID}) ?? 0))
             .contextMenu {
                 Button("Split at Playhead") {studio.splitVideo()}
+                Menu("Freeze Frame Here") {
+                    ForEach([1.0,2.0,3.0,5.0],id:\.self) { length in
+                        Button(String(format:"%g seconds",length)) { studio.freezeFrame(seconds:length) }
+                    }
+                }.disabled(studio.videoClips.first(where:{ $0.id == clipID })?.isHold ?? false)
                 Menu("Transition at This Cut") {
                     Button("None") { studio.setClipTransition(clipID,to:0) }
                     Divider()

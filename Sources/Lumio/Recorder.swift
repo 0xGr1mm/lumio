@@ -41,6 +41,10 @@ struct RecorderPreferences: Codable {
             Task { await verifyLumio(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
         }
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-editing" {
+            Task { await verifyEditingOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
+            return
+        }
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--make-sample" {
             Task { await makeSampleClip(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
@@ -176,6 +180,7 @@ struct RecorderPreferences: Codable {
             case "z": studio.addZoom()
             case "s": studio.addAnnotation("Sticker")
             case "h": studio.hideRegionAtPlayhead()
+            case "f": studio.freezeFrame()
             case ",": studio.goToMarker(forward:false)
             case ".": studio.goToMarker(forward:true)
             default: return false

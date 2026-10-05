@@ -53,7 +53,13 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
         for (start,end) in segments {
             if let active=activeClip(start,end) {
                 let track=active.source.flatMap { added[$0]?.video } ?? sourceTrack
-                try insertScaled(main,from:track,sourceStart:active.sourceTime(forTimeline:start),timelineStart:start,timelineEnd:end,rate:active.rate)
+                if active.isHold {
+                    // One frame stretched across the whole hold, which is how a freeze is built: the
+                    // composition plays a sliver of source very slowly rather than repeating a picture.
+                    try insertScaled(main,from:track,sourceStart:active.sourceStart,timelineStart:start,timelineEnd:end,rate:0.04/max(0.04,end-start))
+                } else {
+                    try insertScaled(main,from:track,sourceStart:active.sourceTime(forTimeline:start),timelineStart:start,timelineEnd:end,rate:active.rate)
+                }
             } else {
                 var target=start
                 while target<end-0.0001 {
@@ -68,7 +74,7 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
         var recordingAudio=try await asset.loadTracks(withMediaType:.audio)
         // Without a separate microphone file, voice enhancement processes the recording's own audio and replaces it here.
         if microphonePath == nil,let enhancedVoice,let processed=try await AVURLAsset(url:enhancedVoice).loadTracks(withMediaType:.audio).first { recordingAudio=[processed] }
-        for clip in clips {
+        for clip in clips where !clip.isHold {
             for audio in clip.source.flatMap({ added[$0]?.audio }) ?? recordingAudio {
                 let available=try await audio.load(.timeRange)
                 let availableEnd=CMTimeRangeGetEnd(available).seconds
@@ -85,7 +91,7 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
             let micAsset=AVURLAsset(url:enhancedVoice ?? URL(fileURLWithPath:microphone))
             if let micTrack=try await micAsset.loadTracks(withMediaType:.audio).first {
                 let available=(try await micAsset.load(.duration)).seconds,offset=microphoneOffset ?? 0
-                for clip in clips where clip.source == nil {
+                for clip in clips where clip.source == nil && !clip.isHold {
                     let start=max(clip.sourceStart,offset),end=min(clip.sourceEnd,available+offset)
                     guard end-start>0.001,let destination=composition.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) else {continue}
                     try insertScaled(destination,from:micTrack,sourceStart:start-offset,timelineStart:clip.timelineTime(forSource:start),timelineEnd:clip.timelineTime(forSource:end),rate:clip.rate)

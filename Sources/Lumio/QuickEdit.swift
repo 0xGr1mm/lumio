@@ -87,7 +87,7 @@ struct QuickEditStep: Identifiable, Equatable {
 let editorKeyHints:[(String,String)] = [
     ("Space","Play or pause"),("← →","One frame back or forward"),
     ("B","Blade · cut at the playhead"),("A","Back to the arrow"),
-    ("Z","Zoom at the playhead"),("S","Sticker"),("H","Hide a region"),("M","Marker"),
+    ("Z","Zoom at the playhead"),("S","Sticker"),("H","Hide a region"),("F","Freeze the frame"),("M","Marker"),
     (", ."," Jump to the marker before or after"),("⌫","Delete what is selected"),
     ("⌘B","Split the clip"),("⌘E","Export"),("⌘S","Save the project"),("⌘Z","Undo")
 ]

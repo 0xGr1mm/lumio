@@ -22,18 +22,22 @@ struct VideoClip:Codable,Equatable,Identifiable {
     var transition:Double? = nil
     /// "Dip to Black" or "Cross Dissolve"; older projects kept only the dip.
     var transitionKind:String? = nil
+    /// Seconds this clip holds a single frame instead of playing it: a freeze frame. The sound stops with
+    /// the picture rather than crawling along with it, which is what a held frame is usually for.
+    var hold:Double? = nil
+    var isHold:Bool { let value=hold ?? 0;return value.isFinite && value>0.05 }
     var resolvedTransition:Double { let value=transition ?? 0;return value.isFinite ? max(0,min(2,value)):0 }
     var resolvedTransitionKind:String { ["Dip to Black","Cross Dissolve"].contains(transitionKind ?? "") ? transitionKind!:"Dip to Black" }
     var rate:Double { max(0.05,speed.isFinite ? speed:1) }
-    var duration:Double { max(0,sourceEnd-sourceStart)/rate }
-    func timelineTime(forSource time:Double)->Double { timelineStart+(time-sourceStart)/rate }
-    func sourceTime(forTimeline time:Double)->Double { sourceStart+(time-timelineStart)*rate }
-    init(id:UUID=UUID(),sourceStart:Double,sourceEnd:Double,timelineStart:Double=0,speed:Double=1,source:String?=nil,transition:Double?=nil,transitionKind:String?=nil) {
-        self.id=id;self.sourceStart=sourceStart;self.sourceEnd=sourceEnd;self.timelineStart=timelineStart;self.speed=speed;self.source=source;self.transition=transition;self.transitionKind=transitionKind
+    var duration:Double { isHold ? min(60,hold ?? 0):max(0,sourceEnd-sourceStart)/rate }
+    func timelineTime(forSource time:Double)->Double { isHold ? timelineStart:timelineStart+(time-sourceStart)/rate }
+    func sourceTime(forTimeline time:Double)->Double { isHold ? sourceStart:sourceStart+(time-timelineStart)*rate }
+    init(id:UUID=UUID(),sourceStart:Double,sourceEnd:Double,timelineStart:Double=0,speed:Double=1,source:String?=nil,transition:Double?=nil,transitionKind:String?=nil,hold:Double?=nil) {
+        self.id=id;self.sourceStart=sourceStart;self.sourceEnd=sourceEnd;self.timelineStart=timelineStart;self.speed=speed;self.source=source;self.transition=transition;self.transitionKind=transitionKind;self.hold=hold
     }
     // Every one of these is written down: a clip that plays an added recording, or hands over with a
     // transition, would otherwise come back from a saved project playing the wrong file and cutting flat.
-    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed,source,transition,transitionKind}
+    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed,source,transition,transitionKind,hold}
     init(from decoder:Decoder) throws {
         let values=try decoder.container(keyedBy:CodingKeys.self)
         id=try values.decodeIfPresent(UUID.self,forKey:.id) ?? UUID()
@@ -44,6 +48,7 @@ struct VideoClip:Codable,Equatable,Identifiable {
         source=try values.decodeIfPresent(String.self,forKey:.source)
         transition=try values.decodeIfPresent(Double.self,forKey:.transition)
         transitionKind=try values.decodeIfPresent(String.self,forKey:.transitionKind)
+        hold=try values.decodeIfPresent(Double.self,forKey:.hold)
     }
 }
 
@@ -80,7 +85,8 @@ func normalizedVideoClips(_ clips:[VideoClip],sourceDuration:Double,added:[Strin
         if ids.contains(id){id=UUID()}
         ids.insert(id)
         let speed=original.speed.isFinite ? max(0.25,min(4,original.speed)):1
-        result.append(VideoClip(id:id,sourceStart:start,sourceEnd:end,timelineStart:max(0,min(86_400,original.timelineStart)),speed:speed,source:original.source,transition:original.resolvedTransition>0 ? original.resolvedTransition:nil,transitionKind:original.resolvedTransition>0 ? original.resolvedTransitionKind:nil))
+        let held=original.isHold ? max(0.1,min(30,original.hold ?? 0)):nil
+        result.append(VideoClip(id:id,sourceStart:start,sourceEnd:end,timelineStart:max(0,min(86_400,original.timelineStart)),speed:speed,source:original.source,transition:original.resolvedTransition>0 ? original.resolvedTransition:nil,transitionKind:original.resolvedTransition>0 ? original.resolvedTransitionKind:nil,hold:held))
     }
     return result
 }
@@ -184,8 +190,11 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
         guard sourceTime>clip.sourceStart+0.04,sourceTime<clip.sourceEnd-0.04,
               let index=videoClips.firstIndex(where:{$0.id == placement.id}) else {return}
         player.pause();playing=false
-        let left=VideoClip(sourceStart:clip.sourceStart,sourceEnd:sourceTime,timelineStart:clip.timelineStart,speed:clip.speed)
-        let right=VideoClip(sourceStart:sourceTime,sourceEnd:clip.sourceEnd,timelineStart:clip.timelineTime(forSource:sourceTime),speed:clip.speed)
+        // Both halves are copies of the clip, so whichever recording it played and however it was set up
+        // survives the cut; only the new inside edge is plain, because a split is not a hand-over.
+        var left=clip; left.id=UUID(); left.sourceEnd=sourceTime
+        var right=clip; right.id=UUID(); right.sourceStart=sourceTime
+        right.timelineStart=clip.timelineTime(forSource:sourceTime); right.transition=nil; right.transitionKind=nil
         videoClips.replaceSubrange(index...index,with:[left,right])
         selectedClip=right.id;position=t
         synchronizeVideoSequence()
@@ -210,7 +219,8 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
     func duplicateSelectedClip() {
         guard let clip=selectedVideoClip else{return}
         player.pause();playing=false
-        let copy=VideoClip(sourceStart:clip.sourceStart,sourceEnd:clip.sourceEnd,timelineStart:clip.timelineStart+clip.duration,speed:clip.speed)
+        var copy=clip; copy.id=UUID(); copy.timelineStart=clip.timelineStart+clip.duration
+        copy.transition=nil; copy.transitionKind=nil
         videoClips.append(copy);selectedClip=copy.id;position=copy.timelineStart
         synchronizeVideoSequence();seek(position)
     }
@@ -238,6 +248,51 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
 
     /// Removes a stretch of the timeline and pulls everything after it back: clips, zooms, captions, annotations,
     /// markers and added audio all move together, so a cut never shifts one against another.
+    /// Pushes everything from a moment onwards later, to make room for something new on the timeline.
+    func openTimelineGap(at:Double,length:Double) {
+        guard length>0.0001 else { return }
+        func moved(_ time:Double)->Double { time>=at-0.0001 ? time+length:time }
+        for index in videoClips.indices where videoClips[index].timelineStart>=at-0.0001 {
+            videoClips[index].timelineStart+=length
+        }
+        zooms=zooms.map { var copy=$0;copy.start=moved($0.start);copy.end=moved($0.end);return copy }
+        captions=captions.map { cue in
+            var copy=cue;copy.start=moved(cue.start);copy.end=moved(cue.end)
+            copy.words=cue.words.map { var value=$0;value.start=moved($0.start);value.end=moved($0.end);return value }
+            return copy
+        }
+        annotations=remappedAnnotations(annotations,moved)
+        invalidateSensitiveScan()
+        markers=remappedMarkers(markers,moved)
+        audioTracks=audioTracks.map { var copy=$0;copy.timelineStart=moved($0.timelineStart);return copy }
+    }
+
+    /// Holds the frame under the playhead for a few seconds, the way a tutorial stops on the result it
+    /// just produced. The clip is cut there, everything after it moves along, and the held frame goes in
+    /// between; undo takes the whole thing back in one step.
+    @discardableResult func freezeFrame(seconds:Double=2) -> UUID? {
+        guard stillImage == nil,duration>0,!busy else { return nil }
+        let at=max(0,min(duration,position))
+        guard let placement=placement(containing:min(at,max(0,duration-0.01))) else { return nil }
+        let clip=placement.clip
+        guard !clip.isHold else { message="The playhead is already on a held frame.";return nil }
+        let length=max(0.2,min(30,seconds.isFinite ? seconds:2))
+        let sourceTime=clip.sourceTime(forTimeline:at)
+        player.pause();playing=false
+        // A cut at the playhead first, so the hold lands between two clean halves.
+        if sourceTime>clip.sourceStart+0.05,sourceTime<clip.sourceEnd-0.05 { splitVideo(at:at) }
+        openTimelineGap(at:at,length:length)
+        let limit=clip.source.flatMap { addedSources[$0] } ?? sourceDuration
+        let start=max(0,min(max(0,limit-0.05),sourceTime))
+        let frozen=VideoClip(sourceStart:start,sourceEnd:min(limit,start+0.04),timelineStart:at,source:clip.source,hold:length)
+        videoClips.append(frozen)
+        selectedClip=frozen.id
+        synchronizeVideoSequence()
+        position=min(duration,at+length);seek(position)
+        flash(String(format:"Frame held for %.1f s",length))
+        return frozen.id
+    }
+
     func closeTimelineGap(from:Double,length:Double) {
         guard length>0.0001 else { return }
         let cuts=[VideoCut(start:from,end:from+length)]
