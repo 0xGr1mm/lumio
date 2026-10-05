@@ -77,23 +77,24 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                 }
             }
         }
-        var sourceAudioDestinations:[AVMutableCompositionTrack]=[]
+        // Each clip's own sound goes to its own track, so a clip can be turned down or muted on its own.
+        var sourceAudioDestinations:[(track:AVMutableCompositionTrack,volume:Double)]=[]
         let enhancedVoice=readyEnhancedVoiceURL()
         var recordingAudio=try await asset.loadTracks(withMediaType:.audio)
         // Without a separate microphone file, voice enhancement processes the recording's own audio and replaces it here.
         if microphonePath == nil,let enhancedVoice,let processed=try await AVURLAsset(url:enhancedVoice).loadTracks(withMediaType:.audio).first { recordingAudio=[processed] }
-        for clip in clips where !clip.isHold {
+        for clip in clips where !clip.isHold && clip.resolvedVolume>0.001 {
             for audio in clip.source.flatMap({ added[$0]?.audio }) ?? recordingAudio {
                 let available=try await audio.load(.timeRange)
                 let availableEnd=CMTimeRangeGetEnd(available).seconds
                 let sourceEnd=min(clip.sourceEnd,availableEnd)
                 guard sourceEnd-clip.sourceStart>0.001,let destination=composition.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) else {continue}
                 try insertScaled(destination,from:audio,sourceStart:clip.sourceStart,timelineStart:clip.timelineStart,timelineEnd:clip.timelineTime(forSource:sourceEnd),rate:clip.rate)
-                sourceAudioDestinations.append(destination)
+                sourceAudioDestinations.append((destination,clip.resolvedVolume))
             }
         }
         let editDuration=CMTime(seconds:max(0.04,duration),preferredTimescale:600)
-        var mixEntries:[(track:AVMutableCompositionTrack,volume:Float,kind:String,start:Double,end:Double)]=sourceAudioDestinations.map{($0,Float(audioSettings.systemVolume),"System",0,duration)}
+        var mixEntries:[(track:AVMutableCompositionTrack,volume:Float,kind:String,start:Double,end:Double)]=sourceAudioDestinations.map{($0.track,Float(audioSettings.systemVolume*$0.volume),"System",0,duration)}
         // A microphone recorded with the screen follows the video clips (cuts and speed) through its clock offset.
         if let microphone=microphonePath,FileManager.default.fileExists(atPath:microphone) {
             let micAsset=AVURLAsset(url:enhancedVoice ?? URL(fileURLWithPath:microphone))

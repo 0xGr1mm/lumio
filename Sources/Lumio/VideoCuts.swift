@@ -26,18 +26,21 @@ struct VideoClip:Codable,Equatable,Identifiable {
     /// the picture rather than crawling along with it, which is what a held frame is usually for.
     var hold:Double? = nil
     var isHold:Bool { let value=hold ?? 0;return value.isFinite && value>0.05 }
+    /// How loud this clip's own sound plays, 0…1. Nil is full volume, which is what every older project means.
+    var volume:Double? = nil
+    var resolvedVolume:Double { let value=volume ?? 1;return value.isFinite ? max(0,min(1,value)):1 }
     var resolvedTransition:Double { let value=transition ?? 0;return value.isFinite ? max(0,min(2,value)):0 }
     var resolvedTransitionKind:String { ["Dip to Black","Cross Dissolve"].contains(transitionKind ?? "") ? transitionKind!:"Dip to Black" }
     var rate:Double { max(0.05,speed.isFinite ? speed:1) }
     var duration:Double { isHold ? min(60,hold ?? 0):max(0,sourceEnd-sourceStart)/rate }
     func timelineTime(forSource time:Double)->Double { isHold ? timelineStart:timelineStart+(time-sourceStart)/rate }
     func sourceTime(forTimeline time:Double)->Double { isHold ? sourceStart:sourceStart+(time-timelineStart)*rate }
-    init(id:UUID=UUID(),sourceStart:Double,sourceEnd:Double,timelineStart:Double=0,speed:Double=1,source:String?=nil,transition:Double?=nil,transitionKind:String?=nil,hold:Double?=nil) {
-        self.id=id;self.sourceStart=sourceStart;self.sourceEnd=sourceEnd;self.timelineStart=timelineStart;self.speed=speed;self.source=source;self.transition=transition;self.transitionKind=transitionKind;self.hold=hold
+    init(id:UUID=UUID(),sourceStart:Double,sourceEnd:Double,timelineStart:Double=0,speed:Double=1,source:String?=nil,transition:Double?=nil,transitionKind:String?=nil,hold:Double?=nil,volume:Double?=nil) {
+        self.id=id;self.sourceStart=sourceStart;self.sourceEnd=sourceEnd;self.timelineStart=timelineStart;self.speed=speed;self.source=source;self.transition=transition;self.transitionKind=transitionKind;self.hold=hold;self.volume=volume
     }
     // Every one of these is written down: a clip that plays an added recording, or hands over with a
     // transition, would otherwise come back from a saved project playing the wrong file and cutting flat.
-    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed,source,transition,transitionKind,hold}
+    enum CodingKeys:String,CodingKey {case id,sourceStart,sourceEnd,timelineStart,speed,source,transition,transitionKind,hold,volume}
     init(from decoder:Decoder) throws {
         let values=try decoder.container(keyedBy:CodingKeys.self)
         id=try values.decodeIfPresent(UUID.self,forKey:.id) ?? UUID()
@@ -49,6 +52,7 @@ struct VideoClip:Codable,Equatable,Identifiable {
         transition=try values.decodeIfPresent(Double.self,forKey:.transition)
         transitionKind=try values.decodeIfPresent(String.self,forKey:.transitionKind)
         hold=try values.decodeIfPresent(Double.self,forKey:.hold)
+        volume=try values.decodeIfPresent(Double.self,forKey:.volume)
     }
 }
 
@@ -86,7 +90,8 @@ func normalizedVideoClips(_ clips:[VideoClip],sourceDuration:Double,added:[Strin
         ids.insert(id)
         let speed=original.speed.isFinite ? max(0.25,min(4,original.speed)):1
         let held=original.isHold ? max(0.1,min(30,original.hold ?? 0)):nil
-        result.append(VideoClip(id:id,sourceStart:start,sourceEnd:end,timelineStart:max(0,min(86_400,original.timelineStart)),speed:speed,source:original.source,transition:original.resolvedTransition>0 ? original.resolvedTransition:nil,transitionKind:original.resolvedTransition>0 ? original.resolvedTransitionKind:nil,hold:held))
+        let loudness=original.volume == nil ? nil:original.resolvedVolume
+        result.append(VideoClip(id:id,sourceStart:start,sourceEnd:end,timelineStart:max(0,min(86_400,original.timelineStart)),speed:speed,source:original.source,transition:original.resolvedTransition>0 ? original.resolvedTransition:nil,transitionKind:original.resolvedTransition>0 ? original.resolvedTransitionKind:nil,hold:held,volume:loudness))
     }
     return result
 }
@@ -343,6 +348,16 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
     }
 
     /// Changes a clip's playback speed and keeps later clips, zooms, captions and added audio in step.
+    /// How loud one clip plays, which is how a noisy stretch is taken out without cutting it.
+    func setClipVolume(_ id:UUID,to requested:Double) {
+        guard let index=videoClips.firstIndex(where:{$0.id == id}) else { return }
+        let value=requested.isFinite ? max(0,min(1,requested)):1
+        guard abs(videoClips[index].resolvedVolume-value)>0.001 else { return }
+        videoClips[index].volume=value
+        refreshComposition()
+        flash(value<0.001 ? "Clip muted":String(format:"Clip at %.0f%%",value*100))
+    }
+
     func setClipSpeed(_ id:UUID,to requested:Double) {
         guard let index=videoClips.firstIndex(where:{$0.id == id}),!busy else{return}
         let speed=requested.isFinite ? max(0.25,min(4,requested)):1

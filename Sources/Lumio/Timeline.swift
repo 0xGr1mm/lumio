@@ -404,7 +404,8 @@ struct VideoClipBlock:View {
                         if clip.isHold { Image(systemName:"snowflake").font(.system(size:9)) }
                         Text(clip.isHold ? "Held Frame":"Clip \((studio.videoClips.firstIndex(where:{$0.id == clipID}) ?? 0)+1)").fontWeight(.semibold)
                     }
-                    Text(clip.isHold ? String(format:"%.1f s · from %.2f s",clip.duration,clip.sourceStart)
+                    Text(clip.resolvedVolume<0.999 ? (clip.resolvedVolume<0.001 ? "Muted":String(format:"Volume %.0f%%",clip.resolvedVolume*100))
+                         : clip.isHold ? String(format:"%.1f s · from %.2f s",clip.duration,clip.sourceStart)
                                      : String(format:"Source %.2f–%.2f · Position %.2f",clip.sourceStart,clip.sourceEnd,clip.timelineStart)+(abs(clip.speed-1)>0.001 ? String(format:" · %g×",clip.speed):"")).foregroundStyle(.white.opacity(0.75))
                 }.font(.system(size:9)).padding(.horizontal,10).allowsHitTesting(false)
                 Rectangle().fill(Color.white.opacity(0.001))
@@ -437,6 +438,13 @@ struct VideoClipBlock:View {
                         Button(String(format:"Dip to Black · %.1f s",length)) { studio.setClipTransition(clipID,to:length,kind:"Dip to Black") }
                     }
                 }.disabled(studio.videoClips.first(where:{ $0.id == clipID })?.timelineStart ?? 0 <= 0.001)
+                Menu("Volume") {
+                    Button("Mute") { studio.setClipVolume(clipID,to:0) }
+                    Divider()
+                    ForEach([0.25,0.5,0.75,1.0],id:\.self) { value in
+                        Button(String(format:"%.0f%%",value*100)) { studio.setClipVolume(clipID,to:value) }
+                    }
+                }
                 Menu("Speed") {
                     ForEach([0.25,0.5,1.0,1.5,2.0,3.0,4.0],id:\.self) { value in
                         Button(String(format:"%g×",value)) {studio.setClipSpeed(clipID,to:value)}

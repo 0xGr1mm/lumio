@@ -97,6 +97,37 @@ import Foundation
         throw editFailure("undo did not bring the held frame back") }
     lines.append("PASS a held frame survives a saved project and comes back on undo")
 
+    // One clip turned down, another muted: each clip's sound is mixed on its own, and a muted clip is
+    // simply not laid down. Cutting out a noisy stretch should not mean cutting out its picture too.
+    let mixed=Studio();mixed.preferences.revealExport=false
+    await mixed.load(folder.appendingPathComponent("sample.mp4"))
+    mixed.videoClips=[VideoClip(sourceStart:0,sourceEnd:1,timelineStart:0),
+                      VideoClip(sourceStart:1,sourceEnd:2,timelineStart:1,volume:0.3),
+                      VideoClip(sourceStart:2,sourceEnd:3,timelineStart:2,volume:0)]
+    mixed.synchronizeVideoSequence(refresh:false)
+    mixed.audioSettings=AudioMixSettings(systemVolume:1)
+    let (mixedAsset,_,mixedMix)=try await mixed.makeEditingComposition(asset:AVURLAsset(url:mixed.source!),size:CGSize(width:320,height:180),fps:30)
+    guard let mixedMix else { throw editFailure("the clips produced no audio at all") }
+    let audioTracks=(mixedAsset as? AVComposition)?.tracks(withMediaType:.audio) ?? []
+    guard audioTracks.count==2 else { throw editFailure("a muted clip still took an audio track: \(audioTracks.count) tracks for two audible clips") }
+    var volumes:[Float]=[]
+    for parameters in mixedMix.inputParameters where audioTracks.contains(where:{ $0.trackID==parameters.trackID }) {
+        var level:Float=0
+        parameters.getVolumeRamp(for:.zero,startVolume:&level,endVolume:nil,timeRange:nil)
+        volumes.append(level)
+    }
+    guard volumes.contains(where:{ abs($0-1)<0.02 }),volumes.contains(where:{ abs($0-0.3)<0.02 }) else {
+        throw editFailure("the clips are not mixed at their own volumes: \(volumes)") }
+    // And it is remembered: a level set on a clip has to come back from the project file.
+    let savedMix=try JSONEncoder().encode(LumioProject(source:mixed.source!.path,look:mixed.look,start:0,end:3,videoClips:mixed.videoClips))
+    let readMix=try JSONDecoder().decode(LumioProject.self,from:savedMix)
+    let restored=normalizedVideoClips(readMix.videoClips ?? [],sourceDuration:3)
+    guard restored.count==3,abs(restored[1].resolvedVolume-0.3)<0.001,restored[2].resolvedVolume<0.001,
+          restored[0].volume==nil else {
+        throw editFailure("clip volumes did not survive the project: \(restored.map(\.resolvedVolume))") }
+    mixed.previewTask?.cancel()
+    lines.append("PASS each clip plays at its own volume, a muted one is left out, and the levels are remembered")
+
     // Exporting a selection: the file is as long as the stretch that was chosen, and it is that stretch
     // rather than the opening of the timeline.
     let part=Studio();part.preferences.revealExport=false;part.exportSettings=ExportSettings()
