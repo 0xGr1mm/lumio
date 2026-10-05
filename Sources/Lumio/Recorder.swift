@@ -181,6 +181,8 @@ struct RecorderPreferences: Codable {
             case "s": studio.addAnnotation("Sticker")
             case "h": studio.hideRegionAtPlayhead()
             case "f": studio.freezeFrame()
+            case "i": studio.setExportIn()
+            case "o": studio.setExportOut()
             case ",": studio.goToMarker(forward:false)
             case ".": studio.goToMarker(forward:true)
             default: return false

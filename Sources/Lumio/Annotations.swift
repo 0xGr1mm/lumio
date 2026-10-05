@@ -228,6 +228,23 @@ func annotationArtwork(_ a:Annotation,frame size:CGSize)->AnnotationArt? {
         position = 0.5; seek(position); refreshComposition()
         flash("Hook line added · type over it in the panel")
     }
+    /// Opens a card at the head of the timeline and puts a line of text on it. The recording keeps its own
+    /// clock — everything simply starts later — so a title can be added at any point in the edit.
+    @discardableResult func addTitleCard(seconds:Double=3,text:String="Your title here")->UUID? {
+        guard duration>0,stillImage == nil,!busy else { return nil }
+        let length=max(0.5,min(20,seconds.isFinite ? seconds:3))
+        player.pause();playing=false
+        openTimelineGap(at:0,length:length)
+        synchronizeVideoSequence(refresh:false)
+        var card=Annotation(kind:"Text",start:0,end:length)
+        card.text=text; card.fontSize=104; card.color=RGB(0xFFFFFF)
+        card.x=0.08; card.y=0.44; card.width=0.84; card.height=0.12
+        annotations.append(card); focusTimeline(.annotation,id:card.id)
+        refreshComposition()
+        position=min(duration,length*0.4);seek(position)
+        flash("Title card added · type over it in the panel")
+        return card.id
+    }
     func setAnnotationRange(_ id:UUID,to range:TimelineRange) {
         guard let i = annotations.firstIndex(where:{ $0.id == id }) else { return }
         annotations[i].start = max(0,range.start); annotations[i].end = min(duration,max(annotations[i].start+0.1,range.end))
@@ -254,6 +271,11 @@ struct AnnotationPanel: View {
                         .frame(maxWidth:.infinity).frame(height:44).contentShape(Rectangle())
                 }.buttonStyle(.plain).background(accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius:8))
                     .help("A big line across the top for the first seconds, the way short videos open")
+                Button { studio.addTitleCard() } label: {
+                    VStack(spacing:4) { Image(systemName:"rectangle.badge.plus").font(.system(size:15)); Text("Title").font(.system(size:9)) }
+                        .frame(maxWidth:.infinity).frame(height:44).contentShape(Rectangle())
+                }.buttonStyle(.plain).background(accent.opacity(0.14)).clipShape(RoundedRectangle(cornerRadius:8))
+                    .help("Opens a card before the recording and puts a title on it")
             }.disabled(studio.stillImage != nil || studio.duration <= 0)
             // Bound by id, so deleting the selected annotation while the panel is open cannot leave a stale index behind.
             if let item = studio.annotations.first(where:{ $0.id == studio.selectedAnnotation }) {

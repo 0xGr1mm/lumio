@@ -61,10 +61,11 @@ import Foundation
                        bounds:CGRect(origin:.zero,size:size),format:.RGBA8,colorSpace:nil)
         return data
     }
-    let held1=try await pixels(1.7),held2=try await pixels(3.3)
+    let held1=try await pixels(1.6),held2=try await pixels(2.5),held3=try await pixels(3.4)
     let playing1=try await pixels(0.3),playing2=try await pixels(1.2)
-    let stillness=looksDistance(held1,held2),movement=looksDistance(playing1,playing2)
-    guard stillness<2 else { throw editFailure("the held frame is not holding: \(stillness)") }
+    let stillness=max(looksDistance(held1,held2),max(looksDistance(held2,held3),looksDistance(held1,held3)))
+    let movement=looksDistance(playing1,playing2)
+    guard stillness<1 else { throw editFailure("the held frame is not holding: \(stillness)") }
     guard movement>stillness*3 else { throw editFailure("the recording does not move enough to tell a hold from it: \(movement)") }
     // The sound stops with the picture: no audio is laid under the hold.
     if let mix {
@@ -95,6 +96,66 @@ import Foundation
     guard hold.videoClips.contains(where:\.isHold),abs(hold.duration-(before+2))<0.01 else {
         throw editFailure("undo did not bring the held frame back") }
     lines.append("PASS a held frame survives a saved project and comes back on undo")
+
+    // Exporting a selection: the file is as long as the stretch that was chosen, and it is that stretch
+    // rather than the opening of the timeline.
+    let part=Studio();part.preferences.revealExport=false;part.exportSettings=ExportSettings()
+    await part.load(folder.appendingPathComponent("sample.mp4"))
+    part.motion.autoZoom=false;part.motion.showCursor=false;part.look.exportHeight=720
+    guard part.exportRange==nil else { throw editFailure("a fresh project already has a selection") }
+    part.position=1.2;part.setExportIn()
+    part.position=2.4;part.setExportOut()
+    guard let span=part.exportRange,abs(span.start-1.2)<0.01,abs(span.end-2.4)<0.01,abs(part.exportLength-1.2)<0.01 else {
+        throw editFailure("the in and out points did not take: \(String(describing:part.exportRange))") }
+    let partial=folder.appendingPathComponent("verified-selection.mp4")
+    await part.export(to:partial)
+    guard part.message==nil else { throw editFailure(part.message!) }
+    let exported=AVURLAsset(url:partial)
+    let writtenLength=try await exported.load(.duration).seconds
+    guard abs(writtenLength-1.2)<0.25 else { throw editFailure("the selection exported \(writtenLength) s instead of 1.2 s") }
+    // It is the right stretch: the first frame of the file matches the timeline at the in point, and the
+    // picture moves across the sample, so matching the opening instead would be a different reading.
+    let (fullAsset,fullComposition,_)=try await part.makeEditingComposition(asset:AVURLAsset(url:part.source!),size:CGSize(width:480,height:270),fps:30)
+    let reference=AVAssetImageGenerator(asset:fullAsset);reference.videoComposition=fullComposition
+    reference.requestedTimeToleranceBefore = .zero;reference.requestedTimeToleranceAfter = .zero
+    let fileFrames=AVAssetImageGenerator(asset:exported)
+    fileFrames.maximumSize=CGSize(width:480,height:270)
+    fileFrames.requestedTimeToleranceBefore = .zero;fileFrames.requestedTimeToleranceAfter = .zero
+    func sampled(_ generator:AVAssetImageGenerator,_ time:Double) async throws->[UInt8] {
+        let image=try await generator.image(at:CMTime(seconds:time,preferredTimescale:600)).image
+        var data=[UInt8](repeating:0,count:480*270*4)
+        context.render(CIImage(cgImage:image),toBitmap:&data,rowBytes:480*4,bounds:CGRect(x:0,y:0,width:480,height:270),format:.RGBA8,colorSpace:nil)
+        return data
+    }
+    let fromFile=try await sampled(fileFrames,0.1)
+    let atIn=try await sampled(reference,1.3),atZero=try await sampled(reference,0.1)
+    let toIn=looksDistance(fromFile,atIn),toStart=looksDistance(fromFile,atZero)
+    guard toIn<toStart else { throw editFailure("the selection exported the wrong stretch: \(toIn) from the in point, \(toStart) from the start") }
+    part.clearExportRange()
+    guard part.exportRange==nil,abs(part.exportLength-part.duration)<0.01 else { throw editFailure("clearing the selection did not restore the whole timeline") }
+    part.previewTask?.cancel()
+    lines.append("PASS an in and out point export only that stretch, and clearing them restores the whole timeline")
+
+    // A title card: the recording starts later, the card carries its own text, and the picture is not
+    // on screen while it plays.
+    let titled=Studio();titled.preferences.revealExport=false
+    await titled.load(folder.appendingPathComponent("sample.mp4"))
+    titled.motion.autoZoom=false;titled.motion.showCursor=false
+    let originalLength=titled.duration
+    guard let cardID=titled.addTitleCard(seconds:2,text:"How Lumio works") else { throw editFailure("the title card was not added") }
+    guard abs(titled.duration-(originalLength+2))<0.01 else { throw editFailure("the timeline did not grow for the card: \(titled.duration)") }
+    guard let firstClip=titled.videoClips.min(by:{ $0.timelineStart<$1.timelineStart }),abs(firstClip.timelineStart-2)<0.01 else {
+        throw editFailure("the recording did not move behind the card") }
+    guard let card=titled.annotations.first(where:{ $0.id==cardID }),card.kind=="Text",card.text=="How Lumio works",
+          card.start==0,abs(card.end-2)<0.01 else { throw editFailure("the card has no title on it") }
+    let (cardAsset,cardComposition,_)=try await titled.makeEditingComposition(asset:AVURLAsset(url:titled.source!),size:CGSize(width:480,height:270),fps:30)
+    let cardFrames=AVAssetImageGenerator(asset:cardAsset);cardFrames.videoComposition=cardComposition
+    cardFrames.requestedTimeToleranceBefore = .zero;cardFrames.requestedTimeToleranceAfter = .zero
+    let onCard=try await sampled(cardFrames,1.0),onRecording=try await sampled(cardFrames,3.0)
+    guard looksDistance(onCard,onRecording)>18 else {
+        throw editFailure("the card looks like the recording: \(looksDistance(onCard,onRecording))") }
+    titled.previewTask?.cancel()
+    lines.append("PASS a title card opens the timeline, holds its own text and keeps the recording off screen")
     return lines
 }
 

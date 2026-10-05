@@ -40,6 +40,16 @@ struct TimelineEditor:View {
                 toolButton("trim","T","arrow.left.and.right")
                 toolButton("position","P","move.3d")
                 Button { studio.splitVideo() } label:{Image(systemName:"scissors")}.disabled(studio.duration <= 0).help("Split at Playhead · ⌘B")
+                Button { studio.setExportIn() } label:{Image(systemName:"arrow.right.to.line")}.disabled(studio.duration <= 0)
+                    .help("Export In at Playhead · I").accessibilityLabel("Export In")
+                Button { studio.setExportOut() } label:{Image(systemName:"arrow.left.to.line")}.disabled(studio.duration <= 0)
+                    .help("Export Out at Playhead · O").accessibilityLabel("Export Out")
+                if studio.exportRange != nil {
+                    Button { studio.clearExportRange() } label:{Image(systemName:"xmark.circle")}
+                        .help("Export the whole timeline again").accessibilityLabel("Clear Export Range")
+                }
+                Button { studio.addTitleCard() } label:{Image(systemName:"rectangle.badge.plus")}.disabled(studio.duration <= 0 || studio.stillImage != nil)
+                    .help("Add a title card before the recording").accessibilityLabel("Add Title Card")
                 Button { studio.freezeFrame() } label:{Image(systemName:"snowflake")}.disabled(studio.duration <= 0 || studio.stillImage != nil)
                     .help("Freeze Frame · F · holds the frame under the playhead for two seconds").accessibilityLabel("Freeze Frame")
                 Button { studio.duplicateTimelineSelection() } label:{Image(systemName:"square.on.square")}.disabled(studio.focusedTimelineItem == nil).help("Duplicate Selected Item · ⌘D").accessibilityLabel("Duplicate Selected Item")
@@ -109,6 +119,18 @@ struct TimelineEditor:View {
                             }
                             .overlay(alignment:.topLeading) {
                                 Rectangle().fill(.white.opacity(0.85)).frame(width:1).overlay(alignment:.top){Circle().fill(.white).frame(width:10,height:10)}.offset(x:width*studio.position/max(0.01,studio.duration)).allowsHitTesting(false)
+                            }
+                            // What the next export will cover, when it is not the whole timeline.
+                            .overlay(alignment:.topLeading) {
+                                if let span=studio.exportRange {
+                                    let scale=width/max(0.01,studio.duration)
+                                    HStack(spacing:0) {
+                                        Rectangle().fill(.black.opacity(0.52)).frame(width:max(0,span.start*scale))
+                                        Rectangle().fill(accent.opacity(0.10)).frame(width:max(0,(span.end-span.start)*scale))
+                                            .overlay(Rectangle().stroke(accent.opacity(0.8),lineWidth:2))
+                                        Rectangle().fill(.black.opacity(0.52)).frame(width:max(0,(studio.duration-span.end)*scale))
+                                    }.frame(height:350).allowsHitTesting(false)
+                                }
                             }
                         }.background(Color(white:0.035))
                     }

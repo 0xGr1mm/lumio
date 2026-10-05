@@ -109,7 +109,10 @@ struct Editor: View {
                 Button("Export Chapters (TXT)…") { studio.exportChapters() }.disabled(studio.markers.isEmpty)
                 }
                 Divider()
-                Button(studio.stillImage == nil ? "Export \(studio.exportSettings.resolvedFormat)…":"Export PNG…") { studio.startExport() }
+                Button(exportButtonTitle) { studio.startExport() }
+                if studio.exportRange != nil {
+                    Button("Export the Whole Timeline Instead") { studio.clearExportRange() }
+                }
                 if studio.stillImage == nil {
                     Button("Save This Frame as PNG…") { Task { await studio.exportFrame() } }
                         .disabled(studio.duration <= 0 || studio.busy)
@@ -125,6 +128,12 @@ struct Editor: View {
                 Button("") { studio.startExport() }.keyboardShortcut("e")
             }.hidden().disabled(studio.busy)
         }
+    }
+    /// Says what pressing export will actually write, because a selection is easy to forget about.
+    var exportButtonTitle:String {
+        guard studio.stillImage == nil else { return "Export PNG…" }
+        guard let span=studio.exportRange else { return "Export \(studio.exportSettings.resolvedFormat)…" }
+        return String(format:"Export Selection %.1f–%.1f s…",span.start,span.end)
     }
     var canvasToolbar:some View {
         HStack(spacing:16) {

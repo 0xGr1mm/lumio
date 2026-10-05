@@ -15,16 +15,18 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
     func makeEditingComposition(asset:AVAsset,size:CGSize,fps:Int=60) async throws -> (AVAsset,AVMutableVideoComposition,AVAudioMix?) {
         guard let sourceTrack=try await asset.loadTracks(withMediaType:.video).first else { throw failure("No video track was found") }
         let native=try await sourceTrack.load(.naturalSize)
+        let sourceRate=Double(try await sourceTrack.load(.nominalFrameRate))
         let preferred=try await sourceTrack.load(.preferredTransform)
         let extent=CGRect(origin:.zero,size:native).applying(preferred)
         let composition=AVMutableComposition()
         // Clips may come from recordings added to this project; each one plays from its own file.
         // The assets are kept as well: a track whose asset has been released can no longer be inserted.
-        var added:[String:(asset:AVURLAsset,video:AVAssetTrack,audio:[AVAssetTrack])]=[:]
+        var added:[String:(asset:AVURLAsset,video:AVAssetTrack,audio:[AVAssetTrack],fps:Double)]=[:]
         for path in Set(videoClips.compactMap(\.source)) {
             let extra=AVURLAsset(url:URL(fileURLWithPath:path))
             guard let video=try await extra.loadTracks(withMediaType:.video).first else { continue }
-            added[path]=(extra,video,try await extra.loadTracks(withMediaType:.audio))
+            let extraRate=Double(try await video.load(.nominalFrameRate))
+            added[path]=(extra,video,try await extra.loadTracks(withMediaType:.audio),extraRate>1 ? extraRate:30)
         }
         let usable=videoClips.filter { $0.source == nil || added[$0.source!] != nil }
         let clips=usable.isEmpty ? [VideoClip(sourceStart:0,sourceEnd:sourceDuration)] : usable
@@ -56,7 +58,13 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                 if active.isHold {
                     // One frame stretched across the whole hold, which is how a freeze is built: the
                     // composition plays a sliver of source very slowly rather than repeating a picture.
-                    try insertScaled(main,from:track,sourceStart:active.sourceStart,timelineStart:start,timelineEnd:end,rate:0.04/max(0.04,end-start))
+                    // The sliver is centred inside a single frame of the source — a window picked by the
+                    // clock rather than by the frame grid can straddle two frames, and the hold then
+                    // changes picture halfway through, which is exactly what it is there to prevent.
+                    let holdRate=active.source.flatMap { added[$0]?.fps } ?? (sourceRate>1 ? sourceRate:30)
+                    let frameLength=1/holdRate, window=frameLength*0.3
+                    let centre=((active.sourceStart*holdRate).rounded(.down)+0.5)*frameLength
+                    try insertScaled(main,from:track,sourceStart:max(0,centre-window/2),timelineStart:start,timelineEnd:end,rate:window/max(window,end-start))
                 } else {
                     try insertScaled(main,from:track,sourceStart:active.sourceTime(forTimeline:start),timelineStart:start,timelineEnd:end,rate:active.rate)
                 }

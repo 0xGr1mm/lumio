@@ -73,8 +73,10 @@ func srtDocument(_ cues:[CaptionCue])->String {
 
 @MainActor extension Studio {
     func writeGIF(asset:AVAsset,composition:AVVideoComposition,size:CGSize,to url:URL) async throws {
-        let fps = duration > 30 ? 10.0 : 15.0
-        let frames = max(1,Int((duration*fps).rounded(.up)))
+        let span = exportRange ?? (0,duration)
+        let length = max(0.04,span.end-span.start)
+        let fps = length > 30 ? 10.0 : 15.0
+        let frames = max(1,Int((length*fps).rounded(.up)))
         guard frames <= 1_800 else { throw failure("GIF export is limited to 3 minutes. Trim the timeline or export a video.") }
         let scale = min(1,960/max(1,size.width))
         let generator = AVAssetImageGenerator(asset:asset)
@@ -88,7 +90,7 @@ func srtDocument(_ cues:[CaptionCue])->String {
         let frameProperties = [kCGImagePropertyGIFDictionary:[kCGImagePropertyGIFDelayTime:delay,kCGImagePropertyGIFUnclampedDelayTime:delay]] as CFDictionary
         for index in 0..<frames {
             try Task.checkCancellation()
-            let time = CMTime(seconds:min(max(0,duration-0.001),Double(index)/fps),preferredTimescale:600)
+            let time = CMTime(seconds:span.start+min(max(0,length-0.001),Double(index)/fps),preferredTimescale:600)
             let image = try await generator.image(at:time).image
             CGImageDestinationAddImage(destination,image,frameProperties)
             exportProgress = Double(index+1)/Double(frames)
@@ -126,6 +128,27 @@ let exportPresets: [ExportPreset] = [
 ]
 
 @MainActor extension Studio {
+    /// The stretch to export, once both ends are set and they make sense. Nil means the whole timeline.
+    var exportRange:(start:Double,end:Double)? {
+        guard duration>0,let first=exportStart,let last=exportEnd,first.isFinite,last.isFinite else { return nil }
+        let start=max(0,min(duration,min(first,last))),end=max(0,min(duration,max(first,last)))
+        return end-start>=0.2 ? (start,end):nil
+    }
+    var exportLength:Double { exportRange.map { $0.end-$0.start } ?? duration }
+    func setExportIn() {
+        guard duration>0 else { return }
+        exportStart=max(0,min(duration,position))
+        if let end=exportEnd,end<=exportStart!+0.2 { exportEnd=nil }
+        flash(String(format:"In at %.1f s",exportStart ?? 0))
+    }
+    func setExportOut() {
+        guard duration>0 else { return }
+        exportEnd=max(0,min(duration,position))
+        if let start=exportStart,start>=exportEnd!-0.2 { exportStart=nil }
+        flash(String(format:"Out at %.1f s",exportEnd ?? 0))
+    }
+    func clearExportRange() { exportStart=nil;exportEnd=nil;flash("Exporting the whole timeline again") }
+
     /// Applies a preset. Auto reframe is only turned on for a tall or square canvas holding a wide recording,
     /// where it is the difference between filling the frame and bars on both sides.
     func applyExportPreset(_ preset:ExportPreset) {
@@ -143,10 +166,11 @@ let exportPresets: [ExportPreset] = [
 
 /// Writes a movie that keeps its transparency. ProRes 4444 carries an alpha channel, which the usual
 /// H.264 and HEVC exports cannot, so this path reads the composed frames and writes them itself.
-@MainActor func writeTransparentMovie(asset:AVAsset,composition:AVMutableVideoComposition,audioMix:AVAudioMix?,duration:Double,to url:URL,progress:@escaping @MainActor (Double)->Void) async throws {
+@MainActor func writeTransparentMovie(asset:AVAsset,composition:AVMutableVideoComposition,audioMix:AVAudioMix?,duration:Double,from start:Double=0,to url:URL,progress:@escaping @MainActor (Double)->Void) async throws {
     try? FileManager.default.removeItem(at:url)
     let reader=try AVAssetReader(asset:asset)
-    reader.timeRange=CMTimeRange(start:.zero,duration:CMTime(seconds:max(0.04,duration),preferredTimescale:600))
+    let begin=CMTime(seconds:max(0,start),preferredTimescale:600)
+    reader.timeRange=CMTimeRange(start:begin,duration:CMTime(seconds:max(0.04,duration),preferredTimescale:600))
     let videoTracks=try await asset.loadTracks(withMediaType:.video)
     guard !videoTracks.isEmpty else { throw NSError(domain:"Lumio",code:71,userInfo:[NSLocalizedDescriptionKey:"There is no video to export."]) }
     let videoOutput=AVAssetReaderVideoCompositionOutput(videoTracks:videoTracks,videoSettings:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA])
@@ -194,7 +218,7 @@ let exportPresets: [ExportPreset] = [
     guard writer.startWriting(),reader.startReading() else {
         throw writer.error ?? reader.error ?? NSError(domain:"Lumio",code:74,userInfo:[NSLocalizedDescriptionKey:"The transparent export could not be started."])
     }
-    writer.startSession(atSourceTime:.zero)
+    writer.startSession(atSourceTime:begin)
     let queue=DispatchQueue(label:"studio.lumio.transparent")
 
     func pump(_ input:AVAssetWriterInput,_ output:AVAssetReaderOutput,video:Bool) async {
