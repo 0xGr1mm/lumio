@@ -162,3 +162,44 @@ struct AutomaticZoomCache {
         return zooms
     }
 }
+
+/// Decides when a floating camera should step aside, over the whole timeline.
+///
+/// The raw answer — is the pointer under the camera right now — flickers as the pointer crosses the edge,
+/// and a camera that flicked between corners would be worse than one that simply sat there. So the raw
+/// signal is held for a moment and then eased, which is what turns it into a move a viewer reads as polite.
+func cameraAvoidPath(samples:[PointerSample],settings:MotionSettings,style:CameraStyle,
+                     canvas:CGSize,video:CGRect,placement:VideoPlacement,
+                     manual:[ZoomClip],auto:[ZoomClip],follow:[PointerSample],duration:Double)->CameraAvoidPath {
+    guard style.enabled,style.layout == "Floating",style.resolvedAvoidStyle == "Move",
+          duration>0,!samples.isEmpty else { return CameraAvoidPath(values:[]) }
+    let step=1.0/30
+    let count=max(2,Int(duration/step)+2)
+    var raw=[Double](repeating:0,count:count)
+    let whole=CGRect(origin:.zero,size:canvas)
+    for index in 0..<count {
+        let time=Double(index)*step
+        guard let pointer=pointerAt(time,samples:samples),pointer.x>=0,pointer.x<=1,pointer.y>=0,pointer.y<=1 else { continue }
+        let pose=motionPose(at:time,manual:manual,auto:auto,samples:follow,settings:settings)
+        let home=cameraFrame(style,canvas:whole,video:video,zoomed:pose.scale>1.01)
+        let point=placement.point(pointer,pose)
+        // A margin of a third of the camera's width, so it leaves before the pointer is actually on it.
+        let margin=home.width*0.33
+        raw[index]=home.insetBy(dx:-margin,dy:-margin).contains(point) ? 1:0
+    }
+    // Hold the decision briefly: crossing the corner for a fifth of a second should not send it back.
+    let hold=Int(0.5/step)
+    var held=raw
+    for index in 0..<count where raw[index]>0 {
+        for ahead in index..<min(count,index+hold) { held[ahead]=1 }
+    }
+    var eased=[Double](repeating:0,count:count)
+    var value=0.0
+    // About two thirds of a second to step across, which reads as polite rather than startled.
+    let rate=1-exp(-5.0*step)
+    for index in 0..<count {
+        value+=(held[index]-value)*rate
+        eased[index]=value
+    }
+    return CameraAvoidPath(step:step,values:eased)
+}

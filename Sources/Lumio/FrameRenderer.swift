@@ -2,6 +2,35 @@ import AVFoundation
 import AppKit
 import CoreImage
 
+/// Where the camera sits on the canvas. A free function because the planner that decides when the camera
+/// should step aside has to place it exactly the way the compositor will.
+func cameraFrame(_ style:CameraStyle,canvas:CGRect,video:CGRect,zoomed:Bool)->CGRect {
+    if style.layout == "Camera Full" {return video}
+    if style.layout == "Split Left" {return CGRect(x:video.minX,y:video.minY,width:video.width*0.36,height:video.height)}
+    if style.layout == "Split Right" {return CGRect(x:video.maxX-video.width*0.36,y:video.minY,width:video.width*0.36,height:video.height)}
+    let zoomFactor=zoomed ? style.zoomSize/100:1
+    let w=canvas.width*style.size/100*zoomFactor,h=w*0.75
+    let m=style.margin
+    let x=style.position.contains("Left") ? m:style.position.contains("Right") ? canvas.width-w-m:(canvas.width-w)/2
+    let y=style.position.contains("Top") ? canvas.height-h-m:style.position.contains("Bottom") ? m:(canvas.height-h)/2
+    return CGRect(x:x,y:y,width:w,height:h)
+}
+
+/// How far the camera has stepped aside at each moment, 0 at home and 1 at the far corner.
+/// It is planned once over the whole timeline rather than per frame, because the move has to ease in and
+/// out over time and a compositor frame knows nothing about the frames around it.
+struct CameraAvoidPath {
+    var step=1.0/30
+    var values:[Double]=[]
+    func value(at time:Double)->Double {
+        guard !values.isEmpty,time.isFinite,time>0 else { return values.first ?? 0 }
+        let index=Int(time/step)
+        guard index<values.count-1 else { return values.last ?? 0 }
+        let u=(time-Double(index)*step)/step
+        return values[index]+(values[index+1]-values[index])*u
+    }
+}
+
 struct FrameDesign {
     var size:CGSize
     var rect:CGRect
@@ -54,6 +83,8 @@ struct FrameDesign {
     var personMasks:PersonMaskMaker?=nil
     /// Stretches played by the recording the editor was opened with; only there is its pointer drawn.
     var cursorRanges:[RenderTimeRange]=[]
+    /// Planned sidestep for a floating camera; empty when it is set to stay put or only to fade.
+    var cameraAvoid=CameraAvoidPath()
     /// A name drawn in a corner of every frame, already placed.
     var handle:CGImage?=nil
     var handleRect:CGRect = .zero
@@ -333,15 +364,7 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
         return image.applyingFilter("CIBlendWithAlphaMask",parameters:[kCIInputBackgroundImageKey:CIImage(color:.clear).cropped(to:rect),kCIInputMaskImageKey:mask]).cropped(to:rect)
     }
     func cameraRect(_ style:CameraStyle,canvas:CGRect,video:CGRect,zoomed:Bool)->CGRect {
-        if style.layout == "Camera Full" {return video}
-        if style.layout == "Split Left" {return CGRect(x:video.minX,y:video.minY,width:video.width*0.36,height:video.height)}
-        if style.layout == "Split Right" {return CGRect(x:video.maxX-video.width*0.36,y:video.minY,width:video.width*0.36,height:video.height)}
-        let zoomFactor=zoomed ? style.zoomSize/100:1
-        let w=canvas.width*style.size/100*zoomFactor,h=w*0.75
-        let m=style.margin
-        let x=style.position.contains("Left") ? m:style.position.contains("Right") ? canvas.width-w-m:(canvas.width-w)/2
-        let y=style.position.contains("Top") ? canvas.height-h-m:style.position.contains("Bottom") ? m:(canvas.height-h)/2
-        return CGRect(x:x,y:y,width:w,height:h)
+        cameraFrame(style,canvas:canvas,video:video,zoomed:zoomed)
     }
     func frame(_ raw:CIImage?,camera:CIImage?,time:Double,design d:FrameDesign)->CIImage {
         let canvas=CGRect(origin:.zero,size:d.size),r=d.rect,s=d.settings,vs=d.videoStyle,placement=d.placement
@@ -444,7 +467,14 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
         let cameraStyle=d.cameraStyle
         if var camera,cameraStyle.enabled,cameraStyle.layout != "Screen Only" {
             camera=cameraWithTreatedBackground(camera,style:cameraStyle,masks:d.personMasks,fingerprint:String(format:"%.4f",time))
-            let target=cameraRect(cameraStyle,canvas:canvas,video:r,zoomed:current.scale > 1.01)
+            var target=cameraRect(cameraStyle,canvas:canvas,video:r,zoomed:current.scale > 1.01)
+            // Stepping aside: the camera slides to the mirrored corner rather than fading out, so the
+            // person stays on screen while whatever is being clicked stays uncovered.
+            let sidestep=d.cameraAvoid.value(at:time)
+            if sidestep>0.001 {
+                let away=CGRect(x:canvas.width-target.maxX,y:target.minY,width:target.width,height:target.height)
+                target=CGRect(x:target.minX+(away.minX-target.minX)*sidestep,y:target.minY,width:target.width,height:target.height)
+            }
             // A removed background leaves the person cut out, so a frame or rounded corners around them would put the box back.
             let cutout=cameraStyle.resolvedBackground == "Remove"
             var cameraLayer=cutout ? fitted(camera,to:target,mirror:cameraStyle.mirror).cropped(to:target)
@@ -456,8 +486,8 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
                 let innerCamera=rounded(fitted(camera,to:inner,mirror:cameraStyle.mirror),in:inner,radius:min(inner.width,inner.height)*cameraStyle.roundness/200)
                 cameraLayer=innerCamera.composited(over:border).cropped(to:target)
             }
-            // A floating camera fades while the cursor passes under it, so it never hides what is being clicked.
-            if cameraStyle.avoidCursor ?? true,cameraStyle.layout == "Floating",s.showCursor,let p=pointerAt(time,samples:d.samples),p.x >= 0,p.x <= 1,p.y >= 0,p.y <= 1 {
+            // The older behaviour, kept as a choice: fade while the cursor passes under instead of moving.
+            if cameraStyle.resolvedAvoidStyle == "Fade",cameraStyle.layout == "Floating",s.showCursor,let p=pointerAt(time,samples:d.samples),p.x >= 0,p.x <= 1,p.y >= 0,p.y <= 1 {
                 let point=placement.point(p,current)
                 let dx=max(target.minX-point.x,0,point.x-target.maxX),dy=max(target.minY-point.y,0,point.y-target.maxY)
                 let u=min(1,hypot(dx,dy)/max(1,target.width*0.35))

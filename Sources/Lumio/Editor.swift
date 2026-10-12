@@ -465,7 +465,11 @@ struct Editor: View {
                 Text("The person is kept and what is behind them is blurred or removed, on device. A frame with nobody in it is left as it is.").font(.caption).foregroundStyle(.secondary)
             }
             Toggle("Mirror Camera",isOn:cameraValue(\.mirror,false))
-            Toggle("Fade When the Cursor Passes Under",isOn:Binding(get:{(studio.motion.cameraStyle ?? CameraStyle()).avoidCursor ?? true},set:{var value=studio.motion.cameraStyle ?? CameraStyle();value.avoidCursor=$0;studio.motion.cameraStyle=value}))
+            Picker("When the Cursor Goes Under",selection:Binding(get:{(studio.motion.cameraStyle ?? CameraStyle()).resolvedAvoidStyle},set:{
+                var value=studio.motion.cameraStyle ?? CameraStyle();value.avoidStyle=$0;value.avoidCursor=$0 != "None";studio.motion.cameraStyle=value
+            })) {
+                Text("Move Aside").tag("Move");Text("Fade").tag("Fade");Text("Stay").tag("None")
+            }
             if studio.cameraPath != nil && studio.cameraOffset != nil { Label("Recorded with the screen · kept in sync automatically",systemImage:"checkmark.circle").font(.caption).foregroundStyle(accent) }
             slider("Border Width",cameraValue(\.borderWidth,3),0...16,"")
             ColorPicker("Border Color",selection:Binding(get:{(studio.motion.cameraStyle ?? CameraStyle()).borderColor.color},set:{var value=studio.motion.cameraStyle ?? CameraStyle();value.borderColor=RGB($0);studio.motion.cameraStyle=value}),supportsOpacity:false)

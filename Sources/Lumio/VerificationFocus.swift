@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 
 @MainActor func verifyFocusExperience(folder:URL) async throws->[String] {
+    var lines:[String]=[]
     func require(_ condition:Bool,_ message:String) throws {
         if !condition {throw NSError(domain:"Lumio",code:91,userInfo:[NSLocalizedDescriptionKey:message])}
     }
@@ -118,7 +119,45 @@ import Foundation
     }
     pumping.autoZoom=false
     try require(autoZoomClips(samples:pumpTrace,settings:pumping,duration:8).isEmpty,"automatic zooms were planned with the feature off")
-    return [String(format:"PASS camera leaves %.0f/%.0f ms early and completes the move in %.2f/%.2f s with no overshoot, peak jerk %.0f/%.0f per s³ (focused/fluid)",
+    // The floating camera steps aside rather than sitting on top of what is being clicked.
+    var bubble=CameraStyle();bubble.enabled=true;bubble.layout="Floating";bubble.position="Bottom Right";bubble.size=20
+    let canvas=CGSize(width:1280,height:720)
+    var framing=Look();framing.glow=0
+    let place=videoPlacement(look:framing,canvas:canvas,mediaAspect:16.0/9.0)
+    let home=cameraFrame(bubble,canvas:CGRect(origin:.zero,size:canvas),video:place.rect,zoomed:false)
+    // A pointer parked under the camera, then well away from it.
+    func parked(_ x:Double,_ y:Double)->[PointerSample] {
+        stride(from:0.0,through:6.0,by:1.0/60).map { PointerSample(time:$0,x:$0<2 ? 0.1:x,y:$0<2 ? 0.1:y,pressed:false) }
+    }
+    let under=place.point(PointerSample(time:0,x:0,y:0,pressed:false),ZoomPose())
+    _ = under
+    // Where the camera sits, in the recording's own coordinates.
+    let cameraCentreX=(home.midX-place.rect.minX)/place.rect.width
+    let cameraCentreY=1-(home.midY-place.rect.minY)/place.rect.height
+    let avoiding=cameraAvoidPath(samples:parked(cameraCentreX,cameraCentreY),settings:MotionSettings(),style:bubble,
+        canvas:canvas,video:place.rect,placement:place,manual:[],auto:[],follow:[],duration:6)
+    try require(!avoiding.values.isEmpty,"the camera never planned a sidestep")
+    try require(avoiding.value(at:1.0)<0.05,"the camera stepped aside while the pointer was nowhere near it")
+    try require(avoiding.value(at:3.5)>0.85,"the camera did not step aside for the pointer under it")
+    // It has to glide. Measured as the time to cross, which does not depend on how often the path is
+    // sampled, unlike the distance covered between two neighbouring samples.
+    func crossing(_ path:CameraAvoidPath)->Double {
+        let began=path.values.firstIndex{ $0>0.1 } ?? 0
+        let arrived=path.values.firstIndex{ $0>0.9 } ?? path.values.count-1
+        return Double(arrived-began)*path.step
+    }
+    let glide=crossing(avoiding)
+    try require(glide>0.3 && glide<1.2,"the camera crosses in \(glide) s, which is a jump rather than a glide")
+    // And a pointer far away leaves it at home.
+    let resting=cameraAvoidPath(samples:parked(0.1,0.9),settings:MotionSettings(),style:bubble,
+        canvas:canvas,video:place.rect,placement:place,manual:[],auto:[],follow:[],duration:6)
+    try require((resting.values.max() ?? 0)<0.05,"the camera stepped aside for a pointer on the other side of the frame")
+    var staying=bubble;staying.avoidStyle="None"
+    try require(cameraAvoidPath(samples:parked(cameraCentreX,cameraCentreY),settings:MotionSettings(),style:staying,
+        canvas:canvas,video:place.rect,placement:place,manual:[],auto:[],follow:[],duration:6).values.isEmpty,"a camera set to stay still planned a sidestep")
+    lines.append(String(format:"PASS the floating camera glides aside in %.2f s when the pointer goes under it and stays home otherwise",glide))
+
+    return lines+[String(format:"PASS camera leaves %.0f/%.0f ms early and completes the move in %.2f/%.2f s with no overshoot, peak jerk %.0f/%.0f per s³ (focused/fluid)",
                    -focused.lead*1000,-fluid.lead*1000,focusedMove,fluidMove,focused.jerk,fluid.jerk),
             "PASS region camera stays steady and motion agrees across 30/120 Hz recording traces",
             "PASS playhead updates reuse motion paths and automatic zoom identities; new samples invalidate them",

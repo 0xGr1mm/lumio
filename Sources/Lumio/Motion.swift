@@ -22,6 +22,14 @@ struct CameraStyle: Codable, Equatable {
     var zoomSize = 78.0
     var margin = 24.0
     var avoidCursor: Bool? = nil
+    /// What a floating camera does when the pointer goes under it: "None", "Fade" or "Move".
+    /// Moving keeps the person on screen, which is why it is the default; fading is the older behaviour.
+    var avoidStyle: String? = nil
+    var resolvedAvoidStyle: String {
+        if avoidCursor == false { return "None" }
+        let value=avoidStyle ?? "Move"
+        return ["None","Fade","Move"].contains(value) ? value:"Move"
+    }
     /// What happens behind the person in the camera: "None", "Blur" or "Remove".
     var background: String? = nil
     var backgroundBlur: Double? = nil
