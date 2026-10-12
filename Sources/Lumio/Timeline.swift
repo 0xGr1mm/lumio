@@ -29,7 +29,8 @@ struct TimelineEditor:View {
                 Button { studio.undoEdit() } label:{Image(systemName:"arrow.uturn.backward")}.disabled(studio.undoStack.isEmpty).help("Undo · ⌘Z")
                 Button { studio.redoEdit() } label:{Image(systemName:"arrow.uturn.forward")}.disabled(studio.redoStack.isEmpty).help("Redo · ⇧⌘Z")
                 Divider().frame(height:18)
-                Button { studio.splitVideo() } label:{Label("Split",systemImage:"scissors")}.disabled(studio.duration<=0).help("Split at Playhead · ⌘B")
+                Button { studio.splitAtPlayhead() } label:{Label("Split",systemImage:"scissors")}.disabled(studio.duration<=0)
+                    .help("Split at Playhead · ⌘B · cuts the selected audio track when one is in hand")
                 Button { studio.addZoom();selectZoom() } label:{Label("Add zoom",systemImage:"plus.magnifyingglass")}.disabled(studio.stillImage != nil)
                 Button { studio.deleteTimelineSelection() } label:{Image(systemName:"trash")}.disabled(studio.focusedTimelineItem == nil).help("Delete Selected Item · ⌫")
                 Menu {
@@ -126,7 +127,7 @@ struct TimelineEditor:View {
     /// Single-key tools, Space, Delete, arrows and undo are handled by AppCoordinator so they never fire while a text field is being edited.
     var shortcuts:some View {
         HStack {
-            Button("") {studio.splitVideo()}.keyboardShortcut("b",modifiers:.command)
+            Button("") {studio.splitAtPlayhead()}.keyboardShortcut("b",modifiers:.command)
         }
     }
     func ruler(width:Double)->some View {
@@ -274,16 +275,27 @@ struct TimelineEditor:View {
             Rectangle().fill(Color.green.opacity(0.025)).frame(width:width,height:38).contentShape(Rectangle()).gesture(seekGesture(width:width))
             ForEach(studio.audioTracks) { track in
                 let length=min(track.duration,max(0,studio.duration-track.timelineStart))
-                TimelineRangeBlock(range:TimelineRange(start:track.timelineStart,end:track.timelineStart+length),width:width,duration:studio.duration,height:28,resizable:false,cornerRadius:5,
+                TimelineRangeBlock(range:TimelineRange(start:track.timelineStart,end:track.timelineStart+length),width:width,duration:studio.duration,height:28,cornerRadius:5,
                     fill:track.muted ? Color.gray.opacity(0.3):Color.green.opacity(studio.selectedAudioTrack == track.id ? 0.72:0.42),selected:studio.selectedAudioTrack == track.id,
                     bounds:{ (0,max(studio.duration,track.timelineStart+length)) },
                     snapTargets:{ studio.timelineSnapTargets(excluding:nil) },
                     onSelect:{ studio.focusTimeline(.audio,id:track.id) },
-                    onCommit:{ studio.moveAudioTrack(track.id,toTimelineStart:$0.start) }) { _,_ in
+                    onCommit:{ range in
+                        // Moving keeps its length; dragging an edge trims or extends it.
+                        if abs((range.end-range.start)-length)<0.004 { studio.moveAudioTrack(track.id,toTimelineStart:range.start) }
+                        else { studio.setAudioRange(track.id,to:range) }
+                    }) { _,_ in
                     Image(systemName:track.kind == "Voiceover" ? "mic.fill":"waveform")
                 }
-                .help("\(track.name) · drag to move it on the timeline")
-                .contextMenu{TimelineItemMenu(studio:studio,kind:.audio,id:track.id)}
+                .help("\(track.name) · drag to move it, drag its edges to trim or extend it")
+                .contextMenu{
+                    Button("Cut at Playhead") { studio.splitAudioTrack(track.id) }
+                    Toggle("Loop to Fill",isOn:Binding(get:{track.loop},set:{ value in
+                        if let index=studio.audioTracks.firstIndex(where:{ $0.id==track.id }) { studio.audioTracks[index].loop=value;studio.refreshComposition() }
+                    }))
+                    Divider()
+                    TimelineItemMenu(studio:studio,kind:.audio,id:track.id)
+                }
             }
         }.frame(height:38)
     }

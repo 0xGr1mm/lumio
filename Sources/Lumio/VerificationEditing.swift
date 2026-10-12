@@ -183,6 +183,52 @@ import Foundation
     mixed.previewTask?.cancel()
     lines.append("PASS each clip plays at its own volume, a muted one is left out, and the levels are remembered")
 
+    // Sound has to be editable like anything else: trimmed, extended, cut in two and taken away.
+    let sound=Studio();sound.preferences.revealExport=false
+    await sound.load(folder.appendingPathComponent("sample.mp4"))
+    let music=sound.source!.path
+    sound.audioTracks=[AudioTrackEdit(name:"Bed",path:music,kind:"Music",timelineStart:0.2,sourceStart:0,sourceEnd:3,volume:0.6,sourceLength:3)]
+    let trackID=sound.audioTracks[0].id
+    // Pulling the head in trims the material instead of sliding the sound along under it.
+    sound.setAudioRange(trackID,to:TimelineRange(start:0.7,end:3.2))
+    guard let trimmed=sound.audioTracks.first,abs(trimmed.sourceStart-0.5)<0.01,abs(trimmed.timelineStart-0.7)<0.01 else {
+        throw editFailure("trimming the head moved the sound instead of trimming it: \(sound.audioTracks.first.map { ($0.sourceStart,$0.timelineStart) } ?? (0,0))") }
+    // The tail cannot be pulled past the end of the file while the track does not loop.
+    sound.setAudioRange(trackID,to:TimelineRange(start:0.7,end:9))
+    guard let capped=sound.audioTracks.first,abs(capped.duration-2.5)<0.02 else {
+        throw editFailure("a track that does not loop was extended past its material: \(sound.audioTracks.first?.duration ?? 0)") }
+    // With looping on it can be pulled out as far as the timeline needs.
+    sound.audioTracks[0].loop=true
+    sound.setAudioRange(trackID,to:TimelineRange(start:0.7,end:9))
+    guard let looped=sound.audioTracks.first,abs(looped.duration-8.3)<0.05 else {
+        throw editFailure("a looping track would not extend: \(sound.audioTracks.first?.duration ?? 0)") }
+    // Cutting it in two, then throwing one piece away.
+    sound.audioTracks[0].loop=false
+    sound.setAudioRange(trackID,to:TimelineRange(start:0.7,end:3.2))
+    sound.position=1.9
+    sound.focusTimeline(.audio,id:trackID)
+    guard let rightID=sound.splitAudioTrack(trackID),sound.audioTracks.count==2 else { throw editFailure("the audio was not cut in two") }
+    guard let left=sound.audioTracks.first(where:{ $0.id==trackID }),let right=sound.audioTracks.first(where:{ $0.id==rightID }),
+          abs(left.timelineStart+left.duration-1.9)<0.02,abs(right.timelineStart-1.9)<0.02,
+          abs(right.sourceStart-(left.sourceStart+left.duration))<0.02 else {
+        throw editFailure("the two pieces do not meet where the cut was made") }
+    // The shared split button cuts the audio while a track is in hand, and the video otherwise.
+    sound.splitAtPlayhead()
+    guard sound.videoClips.count==1 else { throw editFailure("the split cut the video while an audio track was selected") }
+    sound.deleteTimelineItem(.audio,id:rightID)
+    guard sound.audioTracks.count==1,sound.audioTracks[0].id==trackID else { throw editFailure("deleting a piece of audio removed the wrong one") }
+    // And what is left is what gets laid down: one track, as long as the piece that remains.
+    let (soundAsset,_,_)=try await sound.makeEditingComposition(asset:AVURLAsset(url:sound.source!),size:CGSize(width:320,height:180),fps:30)
+    let laid=(soundAsset as? AVComposition)?.tracks(withMediaType:.audio) ?? []
+    guard let bed=laid.last else { throw editFailure("the remaining audio was not laid down") }
+    // The track's own range is measured from zero and so counts the silence before it; what was actually
+    // laid down is the sum of the pieces that carry sound.
+    let played=try await bed.load(.segments).filter{ !$0.isEmpty }.reduce(0.0) { $0+$1.timeMapping.target.duration.seconds }
+    guard abs(played-sound.audioTracks[0].duration)<0.1 else {
+        throw editFailure("the laid down audio is \(played) s for a \(sound.audioTracks[0].duration) s piece") }
+    sound.previewTask?.cancel()
+    lines.append("PASS audio trims from either edge, extends only where there is material, cuts in two and deletes a piece")
+
     // Exporting a selection: the file is as long as the stretch that was chosen, and it is that stretch
     // rather than the opening of the timeline.
     let part=Studio();part.preferences.revealExport=false;part.exportSettings=ExportSettings()

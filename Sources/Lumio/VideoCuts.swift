@@ -239,6 +239,11 @@ func motionPointerSamples(_ raw:[PointerSample],clips:[VideoClip],crop:CGRect)->
         return clipPlacements.last {$0.timelineStart <= t && t < $0.timelineEnd}
     }
 
+    /// Cuts whatever is selected at the playhead: an audio track if one is in hand, otherwise the video.
+    func splitAtPlayhead() {
+        if timelineFocus == .audio,let id=selectedAudioTrack,audioTracks.contains(where:{ $0.id==id }) { splitAudioTrack(id);return }
+        splitVideo()
+    }
     func splitVideo(at requested:Double?=nil) {
         let t=requested ?? position
         guard let placement=placement(containing:t) else {return}

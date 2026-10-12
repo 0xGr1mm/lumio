@@ -6,7 +6,11 @@ struct AudioTrackEdit: Codable, Equatable, Identifiable {
     var id=UUID();var name:String;var path:String;var kind:String
     var timelineStart:Double=0;var sourceStart:Double=0;var sourceEnd:Double
     var volume:Double=0.8;var muted=false;var loop=false
+    /// How long the file itself is. A track can be pulled out past this only when it loops, because
+    /// otherwise the extra length would simply play nothing.
+    var sourceLength:Double? = nil
     var duration:Double {max(0,sourceEnd-sourceStart)}
+    var material:Double { let value=sourceLength ?? sourceEnd;return value.isFinite && value>0 ? value:sourceEnd }
 }
 struct AudioMixSettings: Codable, Equatable {
     var systemVolume=1.0;var ducking=true;var duckLevel=0.25
@@ -47,17 +51,52 @@ let bundledMusic=[
 @MainActor extension Studio {
     func addBundledMusic(_ music:BundledMusic) {
         guard let url=Bundle.main.url(forResource:music.file,withExtension:"wav",subdirectory:"Audio") else {message="The bundled music file is missing.";return}
-        audioTracks.append(AudioTrackEdit(name:music.name,path:url.path,kind:"Music",timelineStart:position,sourceEnd:16,loop:true));selectedAudioTrack=audioTracks.last?.id
+        audioTracks.append(AudioTrackEdit(name:music.name,path:url.path,kind:"Music",timelineStart:position,sourceEnd:16,loop:true,sourceLength:16));selectedAudioTrack=audioTracks.last?.id
         flash("\(music.name) added to the timeline")
     }
     func previewMusic(_ music:BundledMusic) {
         guard let url=Bundle.main.url(forResource:music.file,withExtension:"wav",subdirectory:"Audio") else{return}
         do {musicPreviewPlayer=try AVAudioPlayer(contentsOf:url);musicPreviewPlayer?.play()} catch {message=error.localizedDescription}
     }
+    /// Drags on an audio block's edges. Pulling the head in keeps the sound where it already sat under the
+    /// playhead — the material is trimmed rather than slid — and pulling the tail out only goes past the end
+    /// of the file when the track loops, since otherwise there would be nothing there to play.
+    func setAudioRange(_ id:UUID,to range:TimelineRange) {
+        guard let index=audioTracks.firstIndex(where:{ $0.id == id }) else { return }
+        let track=audioTracks[index]
+        let start=max(0,range.start),end=max(start+0.1,range.end)
+        if abs(start-track.timelineStart)>0.001 {
+            let wanted=track.sourceStart+(start-track.timelineStart)
+            let trimmed=max(0,min(track.sourceEnd-0.1,wanted))
+            audioTracks[index].sourceStart=trimmed
+            audioTracks[index].timelineStart=max(0,track.timelineStart+(trimmed-track.sourceStart))
+        } else {
+            let limit=track.loop ? 86_400:max(0.1,track.material-track.sourceStart)
+            audioTracks[index].sourceEnd=track.sourceStart+max(0.1,min(end-start,limit))
+        }
+        refreshComposition()
+    }
+    /// Cuts an audio track in two at a moment, so a piece of it can be taken out or moved on its own.
+    @discardableResult func splitAudioTrack(_ id:UUID,at requested:Double?=nil)->UUID? {
+        guard let index=audioTracks.firstIndex(where:{ $0.id == id }) else { return nil }
+        let track=audioTracks[index]
+        let at=requested ?? position
+        let offset=at-track.timelineStart
+        guard offset>0.1,offset<track.duration-0.1 else { message="Put the playhead inside the audio before cutting it.";return nil }
+        var left=track;left.sourceEnd=track.sourceStart+offset
+        var right=track;right.id=UUID();right.sourceStart=track.sourceStart+offset;right.timelineStart=at
+        // A looping track that is cut keeps playing from where the cut left off, not from the top again.
+        if track.loop,right.sourceStart>track.material { right.sourceStart=track.sourceStart }
+        audioTracks.replaceSubrange(index...index,with:[left,right])
+        selectedAudioTrack=right.id;focusTimeline(.audio,id:right.id)
+        refreshComposition()
+        flash("Audio cut · delete either piece to remove it")
+        return right.id
+    }
     func chooseAudioTrack() {
         let picker=NSOpenPanel();picker.allowedContentTypes=[.audio];picker.allowsMultipleSelection=false
         guard picker.runModal() == .OK,let url=picker.url else{return}
-        Task { do {let length=try await AVURLAsset(url:url).load(.duration).seconds;guard length.isFinite,length>0 else{throw failure("The audio file is empty.")};audioTracks.append(AudioTrackEdit(name:url.deletingPathExtension().lastPathComponent,path:url.path,kind:"Imported",timelineStart:position,sourceEnd:length));selectedAudioTrack=audioTracks.last?.id} catch {message=error.localizedDescription} }
+        Task { do {let length=try await AVURLAsset(url:url).load(.duration).seconds;guard length.isFinite,length>0 else{throw failure("The audio file is empty.")};audioTracks.append(AudioTrackEdit(name:url.deletingPathExtension().lastPathComponent,path:url.path,kind:"Imported",timelineStart:position,sourceEnd:length,sourceLength:length));selectedAudioTrack=audioTracks.last?.id} catch {message=error.localizedDescription} }
     }
     func toggleVoiceover() async {
         if voiceoverRecording {stopVoiceover();return}
@@ -73,7 +112,7 @@ let bundledMusic=[
     }
     func stopVoiceover() {
         guard let recorder=voiceRecorder else{return};let length=recorder.currentTime;recorder.stop();voiceoverTimer?.invalidate();voiceoverTimer=nil;voiceoverRecording=false;player.pause();playing=false
-        if length>0.05 {audioTracks.append(AudioTrackEdit(name:"Voiceover",path:recorder.url.path,kind:"Voiceover",timelineStart:voiceoverTimelineStart,sourceEnd:length,volume:1));selectedAudioTrack=audioTracks.last?.id}
+        if length>0.05 {audioTracks.append(AudioTrackEdit(name:"Voiceover",path:recorder.url.path,kind:"Voiceover",timelineStart:voiceoverTimelineStart,sourceEnd:length,volume:1,sourceLength:length));selectedAudioTrack=audioTracks.last?.id}
         voiceRecorder=nil
     }
 }
