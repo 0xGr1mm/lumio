@@ -5,6 +5,10 @@ import SwiftUI
 struct PointerSample: Codable, Equatable {
     var time: Double; var x: Double; var y: Double; var pressed: Bool
     var shape: String = "arrow"
+    /// Derived timeline boundary; missing in older sidecars and never inferred from clip IDs alone.
+    var motionReset: Bool? = nil
+    /// nil uses the captured pressed edge; boundaries explicitly preserve or suppress a source click.
+    var clickEdge: Bool? = nil
 }
 struct CameraStyle: Codable, Equatable {
     var enabled = true
@@ -53,9 +57,9 @@ struct MotionSettings: Codable, Equatable {
     var color = RGB(0xFFFFFF)
     var smoothing = true
     var cursorAnimation = "Medium"
-    var stiffness = 470.0
-    var damping = 70.0
-    var mass = 3.0
+    var stiffness = 820.0
+    var damping = 72.0
+    var mass = 1.6
     var tilt = false
     var endMotion = "stop"
     var shakeFilter = true
@@ -107,6 +111,7 @@ func normalizedPointerSamples(_ samples:[PointerSample],sourceDuration:Double,li
     return samples.prefix(limit).compactMap { original in
         guard original.time.isFinite,original.x.isFinite,original.y.isFinite,original.time>=0,original.time<=max(0,sourceDuration),abs(original.x)<=10,abs(original.y)<=10 else{return nil}
         var value=original
+        value.motionReset=nil;value.clickEdge=nil
         if !shapes.contains(value.shape){value.shape="arrow"}
         return value
     }.sorted{$0.time<$1.time}
@@ -117,17 +122,21 @@ func pointerAt(_ time:Double, samples:[PointerSample]) -> PointerSample? {
     var low = 0, high = samples.count-1
     while low+1 < high { let mid = (low+high)/2; if samples[mid].time <= time { low = mid } else { high = mid } }
     let a = samples[low], b = samples[high], u = max(0,min(1,(time-a.time)/max(0.00001,b.time-a.time)))
+    // A hard source cut has no intermediate cursor position. Hold the outgoing position until the cut.
+    if b.motionReset == true { var value=a;value.time=time;value.motionReset=nil;return value }
     return PointerSample(time:time,x:a.x+(b.x-a.x)*u,y:a.y+(b.y-a.y)*u,pressed:a.pressed,shape:a.shape)
 }
 func smoothPointer(_ samples:[PointerSample], settings:MotionSettings) -> [PointerSample] {
     guard settings.smoothing, settings.cursorAnimation != "None", let first = samples.first else { return samples }
+    let path=presentationPointerSamples(samples)
     var x=first.x,y=first.y,vx=0.0,vy=0.0,previous=first.time
-    return samples.map { input in
+    return path.map { input in
         var s=input
+        if input.motionReset == true { x=input.x;y=input.y;vx=0;vy=0;previous=input.time;return s }
         let dt=max(0.001,min(0.1,s.time-previous)); previous=s.time
         if s.x < 0 || s.x > 1 || s.y < 0 || s.y > 1 { x=s.x;y=s.y;vx=0;vy=0;return s }
         var tx=s.x,ty=s.y
-        if settings.shakeFilter && hypot(tx-x,ty-y)*1000 < settings.threshold*0.015 { tx=x;ty=y }
+        if settings.shakeFilter && hypot(tx-x,ty-y)*1000 < settings.threshold*0.015 { tx=x+(tx-x)*0.35;ty=y+(ty-y)*0.35 }
         let steps=max(1,Int(ceil(dt/0.004))), step=dt/Double(steps)
         for _ in 0..<steps {
             vx += (settings.stiffness*(tx-x)-settings.damping*vx)/max(0.1,settings.mass)*step
@@ -137,13 +146,14 @@ func smoothPointer(_ samples:[PointerSample], settings:MotionSettings) -> [Point
         s.x=min(1,max(0,x));s.y=min(1,max(0,y));return s
     }
 }
+func pointerClick(_ sample:PointerSample,previous:Bool)->Bool { sample.clickEdge ?? (sample.pressed && !previous) }
 func autoZoomClips(samples:[PointerSample],settings:MotionSettings,duration:Double,typing:[Double]=[]) -> [ZoomClip] {
     guard settings.autoZoom, !samples.isEmpty else { return [] }
     if settings.keepZoomed { return [ZoomClip(start:0,end:duration,scale:settings.zoom,transition:0.45)] }
     func inside(_ s:PointerSample)->Bool { s.x >= 0 && s.x <= 1 && s.y >= 0 && s.y <= 1 }
     var events:[ZoomClip]=[], previous=false
     for s in samples {
-        if s.pressed && !previous && inside(s) { events.append(ZoomClip(start:max(0,s.time-0.35),end:min(duration,s.time+1.8),scale:settings.zoom,x:s.x,y:s.y,transition:0.45)) }
+        if pointerClick(s,previous:previous) && inside(s) { events.append(ZoomClip(start:max(0,s.time-0.35),end:min(duration,s.time+1.8),scale:settings.zoom,x:s.x,y:s.y,transition:0.45)) }
         previous=s.pressed
     }
     if settings.zoomOnTyping ?? true {
@@ -179,26 +189,10 @@ func punchZoomClips(cuts:[Double],duration:Double,strength:Double,avoiding zooms
     }.map { ZoomClip(start:$0,end:min(duration,$0+0.32),scale:scale,x:0.5,y:0.5,transition:0.09,follow:false) }
 }
 
-/// Camera target for automatic zooms: follows the pointer with a dead zone and a critically damped spring,
-/// so small pointer movements do not pan the zoomed view.
+/// Compatibility entry point for viewport-aware region planning.
 func cameraFollowPath(_ samples:[PointerSample],settings:MotionSettings,viewFraction:Double?=nil)->[PointerSample] {
-    guard let first=samples.first else{return []}
-    let dead=(viewFraction ?? 1/max(1,settings.zoom))*0.5*0.45
-    var cx=min(1,max(0,first.x)),cy=min(1,max(0,first.y)),vx=0.0,vy=0.0,previous=first.time
-    return samples.map { input in
-        var s=input
-        let dt=max(0.001,min(0.1,s.time-previous));previous=s.time
-        guard s.x>=0,s.x<=1,s.y>=0,s.y<=1 else{s.x=cx;s.y=cy;return s}
-        var tx=cx,ty=cy
-        if abs(s.x-cx)>dead {tx=s.x-copysign(dead,s.x-cx)}
-        if abs(s.y-cy)>dead {ty=s.y-copysign(dead,s.y-cy)}
-        let steps=max(1,Int(ceil(dt/0.004))),step=dt/Double(steps)
-        for _ in 0..<steps {
-            vx+=(90*(tx-cx)-19*vx)*step;vy+=(90*(ty-cy)-19*vy)*step
-            cx+=vx*step;cy+=vy*step
-        }
-        s.x=min(1,max(0,cx));s.y=min(1,max(0,cy));return s
-    }
+    let fraction=viewFraction ?? 1/max(1,settings.zoom)
+    return plannedCameraPath(samples,settings:settings,viewport:CGSize(width:fraction,height:fraction))
 }
 func motionPose(at time:Double,manual:[ZoomClip],auto:[ZoomClip],samples:[PointerSample],settings:MotionSettings) -> ZoomPose {
     let manualActive=manual.contains { time >= $0.start && time <= $0.end }
@@ -210,10 +204,10 @@ func motionPose(at time:Double,manual:[ZoomClip],auto:[ZoomClip],samples:[Pointe
     if z.smooth {
         if settings.motion == "fluid" { weight=(1-cos(.pi*u))/2 }
         else if settings.motion == "spring" { weight=u == 1 ? 1 : 1-pow(2,-8*u)*cos(10*u) }
-        else { weight=u*u*(3-2*u) }
+        else { weight=u*u*u*(u*(u*6-15)+10) }
     }
     var x=z.x,y=z.y
-    if !manualActive, z.follow ?? true, let p=pointerAt(time,samples:samples) {
+    if (manualActive ? z.follow == true : z.follow ?? true), let p=pointerAt(time,samples:samples) {
         x=p.x;y=p.y
         let margin=settings.snap*0.4
         if x < margin { x=0 };if x > 1-margin { x=1 }

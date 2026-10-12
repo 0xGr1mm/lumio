@@ -4,6 +4,13 @@ import Carbon
 import CoreImage
 import ImageIO
 
+/// Counts actual clicks rather than extra positional samples introduced at timeline boundaries.
+func verificationPointerClickTimes(_ samples:[PointerSample])->[Double] {
+    var previous=false,result:[Double]=[]
+    for sample in samples {if pointerClick(sample,previous:previous){result.append(sample.time)};previous=sample.pressed}
+    return result
+}
+
 /// Developer-only verification against generated fixtures. Does not record a screen.
 final class VerificationProgress: @unchecked Sendable {
     private let lock = NSLock()
@@ -299,7 +306,7 @@ func looksPatch(_ data:[UInt8],x:Int,y:Int,size:Int,width:Int=320,height:Int=180
         studio.videoClips=[VideoClip(sourceStart:0,sourceEnd:1,timelineStart:0),VideoClip(sourceStart:1,sourceEnd:2,timelineStart:1)]
         studio.pointerSamples=[PointerSample(time:1,x:0.5,y:0.5,pressed:true)]
         studio.keyboardSamples=[KeySample(time:1,key:"K",modifiers:[])]
-        guard studio.timelinePointerSamples.count==1,studio.timelineKeyboardSamples.count==1 else {throw studio.failure("split boundary event duplication failed")}
+        guard verificationPointerClickTimes(studio.timelinePointerSamples)==[1],studio.timelineKeyboardSamples.count==1,studio.timelineKeyboardSamples.first?.time==1 else {throw studio.failure("split boundary event duplication failed")}
         var unsafePreferences=RecorderPreferences();unsafePreferences.fps=0;unsafePreferences.countdown=99
         let safePreferences=unsafePreferences.normalized()
         var unsafeLook=Look();unsafeLook.mode="Broken";unsafeLook.padding=999;unsafeLook.aspect="3:2";unsafeLook.first=RGB(r:-2,g:4,b:.nan);unsafeLook.videoStyle=VideoStyle(scale:50,x:-8,y:8,opacity:4,frame:"Broken")
@@ -706,7 +713,7 @@ func looksPatch(_ data:[UInt8],x:Int,y:Int,size:Int,width:Int=320,height:Int=180
         let full=media.duration
         media.pointerSamples=[PointerSample(time:2,x:0.5,y:0.5,pressed:true)]
         if let id=media.videoClips.first?.id {media.setClipSpeed(id,to:2)}
-        guard abs(media.duration-full/2)<0.02,let mappedPointer=media.timelinePointerSamples.first,abs(mappedPointer.time-1)<0.01 else{throw media.failure("clip speed timing failed")}
+        guard abs(media.duration-full/2)<0.02,verificationPointerClickTimes(media.timelinePointerSamples)==[1] else{throw media.failure("clip speed timing failed")}
         media.splitVideo(at:0.5)
         guard media.videoClips.count==2,abs(media.videoClips[1].sourceStart-1)<0.01,abs(media.videoClips[1].timelineStart-0.5)<0.01 else{throw media.failure("split at 2× failed")}
         media.look.exportHeight=720

@@ -3,8 +3,63 @@ import AppKit
 import CoreImage
 import Foundation
 
+/// Exercises the real Studio mapping and automatic-to-editable conversion, shared by both suites.
+@MainActor func verifyMotionEditing(folder:URL) async throws->[String] {
+    func motionFailure(_ text:String)->NSError { NSError(domain:"Lumio",code:91,userInfo:[NSLocalizedDescriptionKey:text]) }
+    let studio=Studio();studio.preferences.revealExport=false
+    await studio.load(folder.appendingPathComponent("sample.mp4"))
+    defer {studio.previewTask?.cancel()}
+    studio.look=Look();studio.motion=MotionSettings()
+    studio.pointerSamples=[PointerSample(time:0,x:0.2,y:0.5,pressed:false),PointerSample(time:0.8,x:0.2,y:0.5,pressed:true),PointerSample(time:0.9,x:0.2,y:0.5,pressed:false),PointerSample(time:1.6,x:0.8,y:0.5,pressed:false)]
+    let generated=autoZoomClips(samples:studio.timelinePointerSamples,settings:studio.motion,duration:studio.duration)
+    guard let automatic=generated.first else {throw motionFailure("the click did not generate a zoom")}
+    let samples=smoothPointer(studio.timelinePointerSamples,settings:studio.motion)
+    let follow=cameraFollowPath(samples,settings:studio.motion)
+    let before=motionPose(at:1.6,manual:[],auto:generated,samples:follow,settings:studio.motion)
+    studio.selectAutomaticZoom(automatic)
+    let after=motionPose(at:1.6,manual:studio.zooms,auto:[],samples:follow,settings:studio.motion)
+    guard !studio.motion.autoZoom,studio.zooms.first?.follow==true,before==after else {
+        throw motionFailure("editing an automatic zoom changed its tracking target or easing")}
+    let saved=try JSONDecoder().decode([ZoomClip].self,from:JSONEncoder().encode(studio.zooms))
+    guard saved==studio.zooms else {throw motionFailure("editable tracking did not persist")}
+    let manual=ZoomClip(start:0,end:3,scale:2,x:0.25,y:0.4)
+    let fixed=motionPose(at:1.6,manual:[manual],auto:[],samples:follow,settings:studio.motion)
+    guard fixed.x==0.25,fixed.y==0.4 else {throw motionFailure("an authored manual zoom started following the pointer")}
+    studio.pointerSamples=(0...180).map {i in PointerSample(time:Double(i)/60,x:i<120 ? 0.1:0.9,y:0.5,pressed:false)}
+    studio.videoClips=[VideoClip(sourceStart:0,sourceEnd:1,timelineStart:0),VideoClip(sourceStart:2,sourceEnd:3,timelineStart:1)]
+    studio.synchronizeVideoSequence(refresh:false)
+    let cut=studio.timelinePointerSamples
+    let cutSmooth=smoothPointer(cut,settings:studio.motion)
+    let cutFollow=cameraFollowPath(cutSmooth,settings:studio.motion)
+    guard let cursor=pointerAt(1,samples:cutSmooth),let camera=pointerAt(1,samples:cutFollow),
+          abs(cursor.x-0.9)<0.000001,abs(camera.x-0.9)<0.000001,
+          abs((pointerAt(0.9999995,samples:cutSmooth)?.x ?? -1)-0.1)<0.000001 else {
+        throw motionFailure("a source cut smeared cursor or camera motion across its boundary")}
+    studio.pointerSamples=(0...180).map {i in PointerSample(time:Double(i)/60,x:i<45 ? 0.1:0.9,y:0.5,pressed:false)}
+    studio.videoClips=[VideoClip(sourceStart:0,sourceEnd:1,timelineStart:0),VideoClip(sourceStart:1,sourceEnd:3,timelineStart:1)]
+    studio.synchronizeVideoSequence(refresh:false)
+    let continuous=studio.timelinePointerSamples
+    guard continuous.first(where:{abs($0.time-1)<0.000001})?.motionReset != true,
+          abs((pointerAt(1,samples:smoothPointer(continuous,settings:studio.motion))?.x ?? -1)-0.9)>0.01 else {
+        throw motionFailure("a contiguous blade split reset the cursor spring")}
+    studio.pointerSamples=(0...180).map {i in PointerSample(time:Double(i)/60,x:0.5,y:0.5,pressed:i>=120)}
+    studio.videoClips=[VideoClip(sourceStart:0,sourceEnd:1,timelineStart:0),VideoClip(sourceStart:2.2,sourceEnd:3,timelineStart:1)]
+    studio.synchronizeVideoSequence(refresh:false)
+    var zoomSettings=studio.motion;zoomSettings.autoZoom=true
+    guard verificationPointerClickTimes(studio.timelinePointerSamples).isEmpty,
+          autoZoomClips(samples:studio.timelinePointerSamples,settings:zoomSettings,duration:studio.duration).isEmpty else {
+        throw motionFailure("starting a cut mid mouse-down manufactured a click or automatic zoom")}
+    studio.videoClips=[VideoClip(sourceStart:2.5,sourceEnd:3,timelineStart:0),VideoClip(sourceStart:2,sourceEnd:3,timelineStart:0.5)]
+    studio.synchronizeVideoSequence(refresh:false)
+    guard verificationPointerClickTimes(studio.timelinePointerSamples)==[0.5] else {
+        throw motionFailure("a genuine recorded click exactly at the cut was lost or duplicated")}
+    return ["PASS editable automatic zoom preserves tracking and persistence, while authored targets stay fixed",
+            "PASS hard cuts reset cursor and camera without changing contiguous blade motion or inventing clicks"]
+}
+
 @MainActor func verifyEditing(folder:URL) async throws->[String] {
-    var lines:[String]=[]
+    var lines=try await verifyFocusExperience(folder:folder)
+    lines.append(contentsOf:try await verifyMotionEditing(folder:folder))
     func editFailure(_ text:String)->NSError { NSError(domain:"Lumio",code:91,userInfo:[NSLocalizedDescriptionKey:text]) }
     let context=CIContext(options:[.workingColorSpace:NSNull()])
 

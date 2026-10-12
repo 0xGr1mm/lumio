@@ -41,6 +41,10 @@ struct RecorderPreferences: Codable {
             Task { await verifyLumio(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
         }
+        if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-live" {
+            Task { await verifyLivePreviewOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
+            return
+        }
         if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--verify-editing" {
             Task { await verifyEditingOnly(folder:URL(fileURLWithPath:CommandLine.arguments[2])) }
             return
@@ -81,6 +85,12 @@ struct RecorderPreferences: Codable {
         if let icon=Bundle.main.url(forResource:"Lumio",withExtension:"icns") { NSApp.applicationIconImage=NSImage(contentsOf:icon) }
         if let data = UserDefaults.standard.data(forKey:"recorder"), let prefs = try? JSONDecoder().decode(RecorderPreferences.self,from:data) { studio.preferences = prefs.normalized() }
         if let data = UserDefaults.standard.data(forKey:"defaultLook"), let look = try? JSONDecoder().decode(Look.self,from:data) { studio.look = look.normalized() }
+        // Disable the old starting glow once, while preserving other saved look settings and project looks.
+        if !UserDefaults.standard.bool(forKey:"defaultGlowOff0141") {
+            studio.look.glow=0
+            if let data=try? JSONEncoder().encode(studio.look) {UserDefaults.standard.set(data,forKey:"defaultLook")}
+            UserDefaults.standard.set(true,forKey:"defaultGlowOff0141")
+        }
         studio.onOpenEditor = { [weak self] in self?.showEditor() }
         studio.onShowRecorder = { [weak self] in self?.showRecorder() }
         studio.onShowSettings = { [weak self] in self?.showSettings() }
@@ -210,9 +220,9 @@ struct RecorderPreferences: Codable {
         recorder.orderOut(nil)
         if !studio.recording { setCameraPreview(false); studio.cameraRecorder.stopSession() }
         if editor == nil {
-            editor = NSWindow(contentRect:NSRect(x:0,y:0,width:1450,height:950),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            editor = NSWindow(contentRect:NSRect(x:0,y:0,width:1300,height:860),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
             editor?.title = "Lumio"; editor?.titlebarAppearsTransparent = true; editor?.isReleasedWhenClosed = false
-            editor?.contentView = NSHostingView(rootView:Editor(studio:studio)); editor?.minSize = NSSize(width:1180,height:840); editor?.center(); editor?.delegate = self
+            editor?.contentView = NSHostingView(rootView:Editor(studio:studio)); editor?.minSize = NSSize(width:1040,height:740); editor?.center(); editor?.delegate = self
         }
         NSApp.unhide(nil)
         if editor?.isMiniaturized == true { editor?.deminiaturize(nil) }

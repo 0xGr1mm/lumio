@@ -65,7 +65,7 @@ struct Look: Codable, Equatable {
     var shadow = 45.0
     var shadowBlur = 36.0
     var shadowY = 18.0
-    var glow = 45.0
+    var glow = 0.0
     var glowBlur = 45.0
     var glowColor = RGB(0xA18AFF)
     var border = 0.0
@@ -155,7 +155,7 @@ struct Look: Codable, Equatable {
         if let path=value.watermarkPath,!FileManager.default.fileExists(atPath:path) { value.watermarkPath=nil }
         if value.watermarkPath == nil { value.watermarkPosition=nil;value.watermarkSize=nil;value.watermarkOpacity=nil }
         else { value.watermarkPosition=value.resolvedWatermarkPosition;value.watermarkSize=value.resolvedWatermarkSize;value.watermarkOpacity=value.resolvedWatermarkOpacity }
-        value.glow=max(0,min(100,value.glow.isFinite ? value.glow:45));value.glowBlur=max(1,min(120,value.glowBlur.isFinite ? value.glowBlur:45));value.border=max(0,min(10,value.border.isFinite ? value.border:0))
+        value.glow=max(0,min(100,value.glow.isFinite ? value.glow:0));value.glowBlur=max(1,min(120,value.glowBlur.isFinite ? value.glowBlur:45));value.border=max(0,min(10,value.border.isFinite ? value.border:0))
         if !["16:9","9:16","1:1","4:3","4:5"].contains(value.aspect){value.aspect="16:9"};if ![720,1080,1440,2160].contains(value.exportHeight){value.exportHeight=1080}
         // The bar, the handle and the transparent background are only written back when they are in use,
         // so an untouched look still compares equal to a fresh one.
@@ -186,6 +186,10 @@ struct VideoPlacement {
     func point(_ sample:PointerSample,_ pose:ZoomPose)->CGPoint {
         let o=origin(pose)
         return CGPoint(x:o.x+sample.x*contentSize.width*pose.scale,y:o.y+(1-sample.y)*contentSize.height*pose.scale)
+    }
+    /// Visible source width and height at this zoom, including vertical reframing.
+    func followSize(zoom:Double)->CGSize {
+        CGSize(width:min(1,rect.width/max(1,contentSize.width*max(1,zoom))),height:min(1,rect.height/max(1,contentSize.height*max(1,zoom))))
     }
     /// Visible fraction of the content, used to size the pointer-follow dead zone.
     func followFraction(zoom:Double,reframe:Bool)->Double {
@@ -457,9 +461,10 @@ func handleArtwork(_ text:String,fontSize:Double,color:RGB)->CGImage? {
         guard let studio else { return nil }
         let placement=videoPlacement(look:studio.look,canvas:bounds.size,mediaAspect:studio.mediaAspect)
         let reframe=studio.look.autoReframe ?? false
-        let samples=studio.timelinePointerSamples
-        let follow=cameraFollowPath(smoothPointer(samples,settings:studio.motion),settings:studio.motion,viewFraction:placement.followFraction(zoom:studio.motion.zoom,reframe:reframe))
-        var pose=motionPose(at:studio.position,manual:studio.zooms,auto:autoZoomClips(samples:samples,settings:studio.motion,duration:studio.duration,typing:studio.timelineTypingTimes),samples:follow,settings:studio.motion)
+        let scale=max(studio.motion.zoom,studio.zooms.filter{$0.follow == true}.map(\.scale).max() ?? 1)
+        let paths=studio.motionPaths(viewport:placement.followSize(zoom:scale))
+        let follow=paths.camera
+        var pose=motionPose(at:studio.position,manual:studio.zooms,auto:paths.automatic,samples:follow,settings:studio.motion)
         if reframe { pose=reframedPose(pose,follow:pointerAt(studio.position,samples:follow)) }
         return (placement,pose)
     }
@@ -481,6 +486,7 @@ func handleArtwork(_ text:String,fontSize:Double,color:RGB)->CGImage? {
             return
         }
         guard let i=studio.zooms.firstIndex(where:{$0.id == studio.selectedZoom}) else { return }
+        studio.zooms[i].follow=false
         studio.zooms[i].x=min(1,max(0,point.x))
         studio.zooms[i].y=min(1,max(0,point.y))
     }

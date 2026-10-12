@@ -44,6 +44,8 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
     /// Bumped whenever recorded samples change, so their timeline mapping is recomputed only when needed.
     var sampleGeneration = 0
     var timelineSampleCache: TimelineSampleCache?
+    var motionPathCache: MotionPathCache?
+    var automaticZoomCache: AutomaticZoomCache?
     @Published var keyboardStyle = KeyboardOverlayStyle()
     @Published var previewQuality = 1
     @Published var previewSpeed = 1.0
@@ -112,6 +114,12 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
     var lastEdit=Date.distantPast
     var restoringUntil=Date.distantPast
     var previewTask:Task<Void,Never>?
+    var previewTimelineKey:PreviewTimelineKey?
+    var pendingPreviewTimelineKey:PreviewTimelineKey?
+    var previewItem:AVPlayerItem?
+    var previewBuildGeneration=0
+    var previewVisualRevision=0
+    var previewProbe:PreviewFrameProbe?
     let pointerCapture=PointerCapture()
     let keyboardCapture=KeyboardCapture()
     var voiceRecorder:AVAudioRecorder?

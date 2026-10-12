@@ -22,7 +22,7 @@ struct WallpaperPanel:View {
     var filtered:[Wallpaper] { library.items.filter { (category == "All" || $0.category == category || (category == "Classic" && $0.category == "klasik")) && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)) } }
     var body:some View {
         VStack(alignment:.leading,spacing:12) {
-            Picker("Collection",selection:$category) { Text("All").tag("All");Text("Apple").tag("Apple");Text("Classic").tag("Classic") }.pickerStyle(.segmented)
+            Picker("Collection",selection:$category) { Text("All").tag("All");Text("Apple").tag("Apple");Text("Classic").tag("Classic") }.pickerStyle(.segmented).labelsHidden()
             TextField("Search wallpapers",text:$query).textFieldStyle(.roundedBorder)
             HStack {
                 Button { if let item=filtered.randomElement(){apply(item)} } label:{Label("Random",systemImage:"shuffle")}

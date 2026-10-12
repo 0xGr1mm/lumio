@@ -1,4 +1,4 @@
-# Lumio 0.13.0
+# Lumio 0.14.2
 
 Lumio is a local macOS 15+ screen recorder and editor built with SwiftUI, ScreenCaptureKit and AVFoundation. It uses original source and interface assets and has no hosted service or runtime package dependency.
 
@@ -25,11 +25,15 @@ Lumio opens with a draggable capture bar and remains available from its menu bar
 
 ## Editor
 
+The primary inspector shows nine equally sized sections: Background, Design, Zoom, Cursor, Audio, Captions, Camera, Transcript and Shortcuts. Background opens by default; Design keeps Padding, Corners and Shadow directly accessible. Glow starts disabled. Additional tools remain under More tools.
+
+Visual controls update the existing player's video composition immediately, including a paused frame. They do not replace its media, seek, or wait for a debounced timeline rebuild. Changed caption and shortcut artwork is invalidated; appearance controls retain cached motion paths and automatic zoom identities. Media, timing and audio changes still prepare the corresponding timeline asynchronously.
+
 - Independent, non-destructive video clips with blade, trim, restore and free positioning tools.
 - Add another recording to the end of the timeline (timeline toolbar, or ⋯ → Add Recording to Timeline…). It plays from its own file and keeps its own sound; pointer, keyboard, camera and microphone data belong to the recording the editor was opened with. Projects remember the added files.
 - Copy, cut, paste, duplicate and delete any timeline item (zoom, caption, clip or audio) with ⌘C, ⌘X, ⌘V, ⌘D and Delete, or from its right-click menu. Paste lands at the playhead and moves the playhead to the end of the pasted item, so repeated pastes line up. The clipboard lasts for the session, so items can be pasted into another recording.
 - Per-clip speed from 0.25× to 4×; later clips, zooms, captions and added audio move with the new length.
-- Editable manual and automatic zoom clips. Automatic zooms follow clicks and typing bursts, and pan with a dead zone so small pointer movements don't move the view.
+- Editable manual and automatic zoom clips. Automatic framing groups nearby activity into resting targets, anticipates movement between regions, and resets at source discontinuities. Converted automatic blocks retain cursor follow; manual targets stay fixed unless Follow Cursor is enabled. Cursor and camera motion use a shared 60 Hz presentation clock in preview and export.
 - Cursor motion, click effects and motion blur. Recorded pointer shapes (arrow, I-beam, hands, crosshair, resize) are detected from the system cursor.
 - Fourteen cursor styles: one color-adjustable white outline, one solid black arrow, six Custom Cursor fan-art packs and six artwork styles.
 - Editable captions with five visual presets and on-device speech recognition (SpeechAnalyzer on macOS 26, chunked SFSpeechRecognizer before that).
@@ -66,6 +70,12 @@ The suite writes its outputs into the folder it is given, so run it on a copy of
 ```sh
 mkdir -p /tmp/lumio-verify && cp Tests/Fixtures/sample.mp4 /tmp/lumio-verify/
 /Applications/Lumio.app/Contents/MacOS/Lumio --verify /tmp/lumio-verify
+```
+
+The live preview check additionally measures actual rendered intermediate frames during 60 slider changes, tests the paused playhead and uninterrupted playback, and checks artwork invalidation and media timeline replacement for speed changes:
+
+```sh
+/Applications/Lumio.app/Contents/MacOS/Lumio --verify-live /tmp/lumio-verify
 ```
 
 Supply a three-second `sample.mp4` with audio. The suite covers editor handoff, independent cuts, exact blade coordinates, clip speed, zooms, typing zooms, crop, auto reframe, cursor art and shape detection, captions, transcript cuts, camera layouts and camera sync, separate microphone tracks, voice enhancement (noise reduction and delay compensation), device frames, mixed audio, click audio, keyboard overlays and privacy, pause sidecars, project persistence, export formats and cancellation, and decoded MP4/MOV/GIF/PNG output.
@@ -105,4 +115,8 @@ The Cleanup inspector scans the original audio for pauses using adjustable sensi
 
 Applying reviewed suggestions closes timeline gaps and keeps clips, zooms, captions, caption words and added audio aligned. Undo restores the full edit, while the raw recording remains untouched.
 
-The editor rail keeps the most-used workflows visible. Frame, shadow, glow and selected-clip controls (including speed) live in collapsible sections under Video. Export format, codec, frame rate and resolution live in the header Export menu; project and application settings remain in the header menu.
+The editor opens on Background, with six labeled sections: Background, Zoom, Cursor, Audio, Captions and Camera. Wallpaper, gradient, color and image backgrounds are at the top; padding, corners, shadow and frame/crop controls are in Layout & frame. Glow starts off. The previous saved default is updated once, while saved project looks and later explicitly saved defaults retain their settings. More tools keeps advanced workflows available. The timeline hides empty caption, keyboard and audio tracks, while Split and Add zoom stay visible. Export starts from its own button, with format, codec, frame rate and resolution in the adjacent settings menu. Motion paths and automatic block identities are cached while playback advances.
+
+## Motion verification
+
+`--verify-editing` checks motion across 30/120 Hz mouse traces, camera steadiness, cache reuse and invalidation, editable zoom targets, clip boundaries and a decoded 720p/60 fps export. These checks do not establish sustained preview frame rate on every machine.

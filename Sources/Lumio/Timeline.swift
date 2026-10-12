@@ -14,10 +14,10 @@ struct TimelineEditor:View {
     var selectAnnotation:()->Void={}
     @State var magnification=1.0
     @State var thumbnails:[String:[NSImage]]=[:]
-    @State var showCursor=true
+    @State var showCursor=false
     @State var showZoom=true
     @State var showAudio=true
-    @State var showKeys=true
+    @State var showKeys=false
     @State var showAnnotations=true
     @State var showWaveform=true
     /// Where the pointer is over an empty spot of the zoom track, and the zoom being drawn there.
@@ -26,91 +26,62 @@ struct TimelineEditor:View {
     @State var expanded=true
     var body:some View {
         VStack(spacing:0) {
-            HStack(spacing:14) {
-                Button { studio.undoEdit() } label:{Image(systemName:"arrow.uturn.backward")}.disabled(studio.undoStack.isEmpty)
-                Button { studio.redoEdit() } label:{Image(systemName:"arrow.uturn.forward")}.disabled(studio.redoStack.isEmpty)
+            HStack(spacing:12) {
+                Button { studio.undoEdit() } label:{Image(systemName:"arrow.uturn.backward")}.disabled(studio.undoStack.isEmpty).help("Undo · ⌘Z")
+                Button { studio.redoEdit() } label:{Image(systemName:"arrow.uturn.forward")}.disabled(studio.redoStack.isEmpty).help("Redo · ⇧⌘Z")
                 Divider().frame(height:18)
-                Button { studio.addZoom();selectZoom() } label:{Image(systemName:"plus.magnifyingglass")}.help("Add zoom")
-                Button { studio.addMarker();selectMarker() } label:{Image(systemName:"bookmark")}
-                    .help("Add Marker at Playhead · M").accessibilityLabel("Add Marker").disabled(studio.duration <= 0)
-                Button { studio.chooseRecordingToAdd() } label:{Image(systemName:"rectangle.stack.badge.plus")}
-                    .help("Add Another Recording at the End").accessibilityLabel("Add Recording").disabled(studio.stillImage != nil || studio.source == nil)
-                toolButton("select","A","cursorarrow")
-                toolButton("blade","C","scissors")
-                toolButton("trim","T","arrow.left.and.right")
-                toolButton("position","P","move.3d")
-                Button { studio.splitVideo() } label:{Image(systemName:"scissors")}.disabled(studio.duration <= 0).help("Split at Playhead · ⌘B")
-                Button { studio.setExportIn() } label:{Image(systemName:"arrow.right.to.line")}.disabled(studio.duration <= 0)
-                    .help("Export In at Playhead · I").accessibilityLabel("Export In")
-                Button { studio.setExportOut() } label:{Image(systemName:"arrow.left.to.line")}.disabled(studio.duration <= 0)
-                    .help("Export Out at Playhead · O").accessibilityLabel("Export Out")
-                if studio.exportRange != nil {
-                    Button { studio.clearExportRange() } label:{Image(systemName:"xmark.circle")}
-                        .help("Export the whole timeline again").accessibilityLabel("Clear Export Range")
-                }
-                Button { studio.addTitleCard() } label:{Image(systemName:"rectangle.badge.plus")}.disabled(studio.duration <= 0 || studio.stillImage != nil)
-                    .help("Add a title card before the recording").accessibilityLabel("Add Title Card")
-                Button { studio.freezeFrame() } label:{Image(systemName:"snowflake")}.disabled(studio.duration <= 0 || studio.stillImage != nil)
-                    .help("Freeze Frame · F · holds the frame under the playhead for two seconds").accessibilityLabel("Freeze Frame")
-                Button { studio.duplicateTimelineSelection() } label:{Image(systemName:"square.on.square")}.disabled(studio.focusedTimelineItem == nil).help("Duplicate Selected Item · ⌘D").accessibilityLabel("Duplicate Selected Item")
-                Button { studio.deleteTimelineSelection() } label:{Image(systemName:"trash")}.disabled(studio.focusedTimelineItem == nil).help("Delete Selected Item · ⌫").accessibilityLabel("Delete Selected Item")
-                Button { studio.pasteTimelineItem() } label:{Image(systemName:"doc.on.clipboard")}.disabled(studio.timelineClipboard == nil)
-                    .help(studio.timelineClipboard.map { "Paste \($0.name) at Playhead · ⌘V" } ?? "Copy a zoom, caption, clip or audio item to paste it at the playhead").accessibilityLabel("Paste at Playhead")
-                if let focused=studio.focusedTimelineItem { Text("\(focused.name) selected").font(.caption).foregroundStyle(.secondary) }
-                Button { studio.resetVideoClips() } label:{Image(systemName:"arrow.counterclockwise")}.help("Restore Entire Raw Recording").accessibilityLabel("Restore Entire Raw Recording")
-                Menu { Toggle("Zoom",isOn:$showZoom);Toggle("Cursor",isOn:$showCursor);Toggle("Audio",isOn:$showAudio);Toggle("Keyboard Shortcuts",isOn:$showKeys);Toggle("Annotations",isOn:$showAnnotations);Toggle("Sound",isOn:$showWaveform) } label:{Image(systemName:"rectangle.split.3x1")}.help("Visible Tracks")
+                Button { studio.splitVideo() } label:{Label("Split",systemImage:"scissors")}.disabled(studio.duration<=0).help("Split at Playhead · ⌘B")
+                Button { studio.addZoom();selectZoom() } label:{Label("Add zoom",systemImage:"plus.magnifyingglass")}.disabled(studio.stillImage != nil)
+                Button { studio.deleteTimelineSelection() } label:{Image(systemName:"trash")}.disabled(studio.focusedTimelineItem == nil).help("Delete Selected Item · ⌫")
                 Menu {
-                    Button("Selection Tool        A") {studio.timelineTool="select"}
-                    Button("Blade Tool       B / C") {studio.timelineTool="blade"}
-                    Button("Trim Tool       T") {studio.timelineTool="trim"}
-                    Button("Position Tool        P") {studio.timelineTool="position"}
+                    Button("Add recording…") {studio.chooseRecordingToAdd()}
+                    Button("Add marker") {studio.addMarker();selectMarker()}
+                    Button("Add title card") {studio.addTitleCard()}
+                    Button("Freeze frame") {studio.freezeFrame()}
                     Divider()
-                    Button("Split at Playhead    ⌘B") {studio.splitVideo()}
-                    Button("Copy Selected Item    ⌘C") {studio.copyTimelineSelection()}
-                    Button("Cut Selected Item    ⌘X") {studio.cutTimelineSelection()}
-                    Button("Paste at Playhead    ⌘V") {studio.pasteTimelineItem()}
-                    Button("Duplicate Selected Item    ⌘D") {studio.duplicateTimelineSelection()}
-                    Button("Delete Selected Item         ⌫") {studio.deleteTimelineSelection()}
-                    Button("Trim Start to Playhead  ⌥[") {studio.trimSelectedClipToPlayhead(startEdge:true)}
-                    Button("Trim End to Playhead  ⌥]") {studio.trimSelectedClipToPlayhead(startEdge:false)}
+                    Button("Duplicate selected item") {studio.duplicateTimelineSelection()}.disabled(studio.focusedTimelineItem == nil)
+                    Button("Copy selected item") {studio.copyTimelineSelection()}.disabled(studio.focusedTimelineItem == nil)
+                    Button("Paste at playhead") {studio.pasteTimelineItem()}.disabled(studio.timelineClipboard == nil)
                     Divider()
-                    Text("M: Add Marker · , / .: Previous / Next Marker")
-                    Text("Space: Play / Pause · ←/→: One Frame")
-                    Text("⌘Z: Undo · ⇧⌘Z: Redo · ⌘E: Export")
-                } label:{Image(systemName:"keyboard")}.help("Keyboard Shortcuts")
-                if studio.timelineTool == "blade" { Image(systemName:"scissors").foregroundStyle(accent).help("Blade Tool · C/B") }
-                Spacer()
-                Image(systemName:"minus.magnifyingglass")
-                Slider(value:$magnification,in:1...12).frame(width:135)
-                Text(String(format:"%.0f%%",magnification*100)).font(.caption).monospacedDigit().frame(width:45)
-                Button { expanded.toggle() } label:{Image(systemName:expanded ? "chevron.down":"chevron.up")}
-            }.buttonStyle(.plain).padding(12).background(Color(white:0.075))
+                    Button("Set export start") {studio.setExportIn()}
+                    Button("Set export end") {studio.setExportOut()}
+                    Button("Clear export range") {studio.clearExportRange()}.disabled(studio.exportRange == nil)
+                    Divider()
+                    Picker("Tool",selection:$studio.timelineTool) {Text("Select").tag("select");Text("Blade").tag("blade");Text("Trim").tag("trim");Text("Position").tag("position")}
+                    Button("Restore raw recording") {studio.resetVideoClips()}
+                } label:{Label("More",systemImage:"ellipsis")}.fixedSize().accessibilityLabel("Timeline tools")
+                if studio.timelineTool != "select" {Button("Done") {studio.timelineTool="select"}.foregroundStyle(accent)}
+                Spacer(minLength:8)
+                Menu {Toggle("Zoom",isOn:$showZoom);Toggle("Cursor",isOn:$showCursor);Toggle("Audio",isOn:$showAudio);Toggle("Keyboard",isOn:$showKeys);Toggle("Annotations",isOn:$showAnnotations);Toggle("Waveform",isOn:$showWaveform)} label:{Image(systemName:"rectangle.split.3x1")}.fixedSize().help("Visible Tracks")
+                Slider(value:$magnification,in:1...12).frame(width:100).accessibilityLabel("Timeline magnification")
+                Button {expanded.toggle()} label:{Image(systemName:expanded ? "chevron.down":"chevron.up")}.help(expanded ? "Collapse Timeline":"Expand Timeline")
+            }.font(.system(size:12)).buttonStyle(.borderless).padding(.horizontal,16).padding(.vertical,12).background(Color(white:0.075))
             if expanded {
                 GeometryReader { outer in
                     HStack(spacing:0) {
                         VStack(alignment:.leading,spacing:0) {
                             Text("").frame(height:30)
-                            Image(systemName:"captions.bubble").frame(maxWidth:.infinity).frame(height:38).help("Captions")
-                            if showKeys {Image(systemName:"command.square").frame(maxWidth:.infinity).frame(height:34).help("Keyboard Shortcuts")}
-                            if showZoom { Image(systemName:"viewfinder").frame(maxWidth:.infinity).frame(height:40).help("Zoom") }
+                            if !studio.captions.isEmpty {trackLabel("Captions","captions.bubble",height:38)}
+                            if keyboardRowVisible {Image(systemName:"command.square").frame(maxWidth:.infinity).frame(height:34).help("Keyboard Shortcuts")}
+                            if showZoom { trackLabel("Zoom","viewfinder",height:40) }
                             if annotationRowVisible { Image(systemName:"pencil.tip.crop.circle").frame(maxWidth:.infinity).frame(height:38).help("Annotations") }
-                            Image(systemName:"record.circle").frame(maxWidth:.infinity).frame(height:65).help("Video")
-                            if showWaveform { Image(systemName:"waveform.path").frame(maxWidth:.infinity).frame(height:34).help("Recorded Sound") }
-                            if showAudio {Image(systemName:"waveform").frame(maxWidth:.infinity).frame(height:38).help("Audio")}
+                            trackLabel("Video","film",height:65)
+                            if showWaveform { trackLabel("Sound","waveform.path",height:34) }
+                            if audioRowVisible {Image(systemName:"waveform").frame(maxWidth:.infinity).frame(height:38).help("Audio")}
                             if showCursor { Image(systemName:"cursorarrow").frame(maxWidth:.infinity).frame(height:35).help("Cursor") }
                             Spacer()
-                        }.font(.system(size:10)).foregroundStyle(.secondary).padding(.horizontal,10).frame(width:75)
+                        }.font(.system(size:10)).foregroundStyle(.secondary).padding(.horizontal,10).frame(width:78)
                         ScrollView(.horizontal) {
                             let width=max(100,(outer.size.width-90)*magnification)
                             VStack(spacing:0) {
                                 ruler(width:width)
-                                captionRow(width:width)
-                                if showKeys {shortcutRow(width:width)}
+                                if !studio.captions.isEmpty {captionRow(width:width)}
+                                if keyboardRowVisible {shortcutRow(width:width)}
                                 if showZoom { zoomRow(width:width) }
                                 if annotationRowVisible { annotationRow(width:width) }
                                 videoRow(width:width)
                                 if showWaveform { waveformRow(width:width) }
-                                if showAudio {audioRow(width:width)}
+                                if audioRowVisible {audioRow(width:width)}
                                 if showCursor { cursorRow(width:width) }
                                 Spacer(minLength:0)
                             }.frame(width:width)
@@ -129,16 +100,22 @@ struct TimelineEditor:View {
                                         Rectangle().fill(accent.opacity(0.10)).frame(width:max(0,(span.end-span.start)*scale))
                                             .overlay(Rectangle().stroke(accent.opacity(0.8),lineWidth:2))
                                         Rectangle().fill(.black.opacity(0.52)).frame(width:max(0,(studio.duration-span.end)*scale))
-                                    }.frame(height:350).allowsHitTesting(false)
+                                    }.frame(height:trackHeight).allowsHitTesting(false)
                                 }
                             }
                         }.background(Color(white:0.035))
                     }
-                }.frame(height:350)
+                }.frame(height:trackHeight)
             }
         }.background(Color(white:0.045))
         .task(id:studio.source) { await makeThumbs() }
         .background(shortcuts.hidden())
+    }
+    var keyboardRowVisible:Bool {showKeys && !studio.timelineKeyboardSamples.filter{!($0.typing ?? false)}.isEmpty}
+    var audioRowVisible:Bool {showAudio && !studio.audioTracks.isEmpty}
+    var trackHeight:Double {30+65+(showZoom ? 40:0)+(showWaveform ? 34:0)+(studio.captions.isEmpty ? 0:38)+(keyboardRowVisible ? 34:0)+(annotationRowVisible ? 38:0)+(audioRowVisible ? 38:0)+(showCursor ? 35:0)+12}
+    func trackLabel(_ title:String,_ icon:String,height:Double)->some View {
+        HStack(spacing:5) {Image(systemName:icon);Text(title).font(.system(size:10))}.frame(maxWidth:.infinity,alignment:.leading).frame(height:height)
     }
     func toolButton(_ tool:String,_ key:String,_ icon:String)->some View {
         Button {studio.timelineTool=tool} label:{
@@ -166,7 +143,7 @@ struct TimelineEditor:View {
         }
     }
     func zoomRow(width:Double)->some View {
-        let automatic=autoZoomClips(samples:studio.timelinePointerSamples,settings:studio.motion,duration:studio.duration,typing:studio.timelineTypingTimes)
+        let automatic=studio.plannedAutomaticZooms
         return ZStack(alignment:.leading) {
             Rectangle().fill(Color.purple.opacity(0.025)).frame(width:width,height:40).contentShape(Rectangle())
                 .onContinuousHover { phase in

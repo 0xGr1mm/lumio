@@ -31,7 +31,7 @@ cat > "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Info.plist <
 <key>CFBundleIconFile</key><string>Lumio</string>
 <key>CFBundleName</key><string>Lumio</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.13.0</string>
+<key>CFBundleShortVersionString</key><string>0.14.2</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSMicrophoneUsageDescription</key><string>Lumio uses the microphone to add your voice to screen recordings.</string>
 <key>NSCameraUsageDescription</key><string>Lumio records your camera next to the screen so it can be placed and styled in the editor.</string>

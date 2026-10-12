@@ -125,6 +125,58 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
     return start+(time-start)*(newEnd-start)/max(0.000_001,oldEnd-start)
 }
 
+/// Maps only the visible opened-recording segments, with exact source-cut boundaries.
+/// A blade split that resumes at the same source time preserves spring state, regardless of clip ID.
+func motionPointerSamples(_ raw:[PointerSample],clips:[VideoClip],crop:CGRect)->[PointerSample] {
+    guard !clips.isEmpty else { return raw.map { sample in
+        var value=sample;value.x=(sample.x-crop.minX)/crop.width;value.y=(sample.y-crop.minY)/crop.height;return value
+    } }
+    let boundaries=Array(Set(clips.flatMap {[$0.timelineStart,$0.timelineStart+$0.duration]})).sorted()
+    var result:[PointerSample]=[],previousClip:VideoClip?,previousEnd:Double?
+    for (start,end) in zip(boundaries,boundaries.dropFirst()) where end-start>0.0001 {
+        let middle=(start+end)/2
+        guard let clip=clips.last(where:{$0.timelineStart<=middle && middle<$0.timelineStart+$0.duration}) else {
+            previousClip=nil;previousEnd=nil;continue
+        }
+        defer {previousClip=clip;previousEnd=end}
+        guard clip.source == nil else {continue}
+        let sourceStart=clip.sourceTime(forTimeline:start)
+        let sourceEnd=clip.sourceTime(forTimeline:end)
+        var continuous=false
+        if let previousClip,let previousEnd {
+            continuous=previousClip.source == clip.source && !previousClip.isHold && !clip.isHold
+                && abs(previousEnd-start)<0.000001
+                && abs(previousClip.sourceTime(forTimeline:start)-sourceStart)<0.000001
+        }
+        func mapped(_ sample:PointerSample,at time:Double,reset:Bool=false)->PointerSample {
+            var value=sample;value.time=time
+            value.x=(sample.x-crop.minX)/crop.width;value.y=(sample.y-crop.minY)/crop.height
+            value.motionReset=reset ? true:nil;return value
+        }
+        if let first=pointerAt(sourceStart,samples:raw) {
+            var value=mapped(first,at:start,reset:!continuous)
+            value.clickEdge=false
+            if !clip.isHold,let index=raw.firstIndex(where:{abs($0.time-sourceStart)<0.000000001}) {
+                value.clickEdge=raw[index].pressed && (index == 0 || !raw[index-1].pressed)
+            }
+            result.append(value)
+        }
+        if !clip.isHold {
+            for (index,sample) in raw.enumerated() where sample.time>sourceStart && sample.time<sourceEnd {
+                var value=mapped(sample,at:clip.timelineTime(forSource:sample.time))
+                value.clickEdge=sample.pressed && (index == 0 || !raw[index-1].pressed)
+                result.append(value)
+            }
+        }
+        // End just before the next segment so interpolation does not smear a cut backwards in time.
+        let tail=end-min(0.000001,(end-start)/2)
+        if let last=pointerAt(clip.sourceTime(forTimeline:tail),samples:raw) {
+            var value=mapped(last,at:tail);value.clickEdge=false;result.append(value)
+        }
+    }
+    return result
+}
+
 @MainActor extension Studio {
     var clipPlacements:[VideoClipPlacement] {
         videoClips.map {VideoClipPlacement(clip:$0,timelineStart:$0.timelineStart)}
@@ -410,19 +462,10 @@ func speedChangeTime(_ time:Double,start:Double,oldEnd:Double,newEnd:Double)->Do
     private var timelineSamples:TimelineSampleCache {
         let crop=(look.videoStyle ?? VideoStyle()).cropRect
         if let cache=timelineSampleCache,cache.generation == sampleGeneration,cache.clips == videoClips,cache.crop == crop { return cache }
-        let cropped=crop != CGRect(x:0,y:0,width:1,height:1)
-        func mapped(_ sample:PointerSample)->PointerSample {
-            guard cropped else {return sample}
-            var copy=sample;copy.x=(sample.x-crop.minX)/crop.width;copy.y=(sample.y-crop.minY)/crop.height;return copy
-        }
-        var pointer:[PointerSample]=[],keyboard:[KeySample]=[]
-        if videoClips.isEmpty { pointer=pointerSamples.map(mapped);keyboard=keyboardSamples }
+        let pointer=motionPointerSamples(pointerSamples,clips:videoClips,crop:crop)
+        var keyboard:[KeySample]=[]
+        if videoClips.isEmpty { keyboard=keyboardSamples }
         for placement in clipPlacements where placement.clip.source == nil {
-            for sample in pointerSamples where sample.time>=placement.clip.sourceStart && sample.time<placement.clip.sourceEnd {
-                var copy=mapped(sample)
-                copy.time=placement.clip.timelineTime(forSource:sample.time)
-                pointer.append(copy)
-            }
             for sample in keyboardSamples where sample.time>=placement.clip.sourceStart && sample.time<placement.clip.sourceEnd {
                 var copy=sample;copy.time=placement.clip.timelineTime(forSource:sample.time);keyboard.append(copy)
             }

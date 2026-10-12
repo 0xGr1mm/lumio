@@ -132,7 +132,7 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                 let length=min(0.09,(try await clickAsset.load(.duration)).seconds)
                 var previous=false,lastEnd = -1.0
                 for sample in timelinePointerSamples where sample.time<duration {
-                    if sample.pressed && !previous && sample.time>=lastEnd {try destination.insertTimeRange(CMTimeRange(start:.zero,duration:CMTime(seconds:length,preferredTimescale:600)),of:clickSource,at:CMTime(seconds:sample.time,preferredTimescale:600));lastEnd=sample.time+length}
+                    if pointerClick(sample,previous:previous) && sample.time>=lastEnd {try destination.insertTimeRange(CMTimeRange(start:.zero,duration:CMTime(seconds:length,preferredTimescale:600)),of:clickSource,at:CMTime(seconds:sample.time,preferredTimescale:600));lastEnd=sample.time+length}
                     previous=sample.pressed
                 }
                 mixEntries.append((destination,0.7,"Click",0,duration))
@@ -210,7 +210,19 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                 }
             }
         }
-        let sourceAspect=abs(extent.width/extent.height)
+        let visibleRanges=segments.compactMap {start,end -> RenderTimeRange? in activeClip(start,end) == nil ? nil:RenderTimeRange(start:start,end:end) }
+        let cursorRanges=segments.compactMap {start,end -> RenderTimeRange? in activeClip(start,end)?.source == nil ? RenderTimeRange(start:start,end:end):nil }
+        let dips=clips.filter { $0.resolvedTransition>0 && $0.resolvedTransitionKind=="Dip to Black" && $0.timelineStart>0.001 }.map { RenderTimeRange(start:$0.timelineStart,end:$0.resolvedTransition) }
+        let design=makeFrameDesign(size:size,transform:preferred,sourceAspect:abs(extent.width/extent.height),renderDuration:editDuration.seconds,cameraID:cameraID,secondaryID:secondaryID,visibleRanges:visibleRanges,cursorRanges:cursorRanges,dips:dips,dissolves:dissolves)
+        let video=AVMutableVideoComposition();video.customVideoCompositorClass=FrameCompositor.self
+        video.renderSize=size;video.frameDuration=CMTime(value:1,timescale:Int32(max(1,fps)))
+        // Frame timing comes from frameDuration, not the source track: screen recordings are variable-rate,
+        // and the synthesized cursor and zoom motion needs every output frame.
+        video.instructions=[FrameInstruction(trackID:main.trackID,timeRange:CMTimeRange(start:.zero,duration:editDuration),design:design)]
+        return (composition,video,audioMix)
+    }
+    /// Reused by export and live preview; visual edits never rebuild the media timeline.
+    func makeFrameDesign(size:CGSize,transform:CGAffineTransform,sourceAspect:Double,renderDuration:Double,cameraID:CMPersistentTrackID,secondaryID:CMPersistentTrackID,visibleRanges:[RenderTimeRange],cursorRanges:[RenderTimeRange],dips:[RenderTimeRange],dissolves:[DissolveSpan],previous:FrameDesign?=nil)->FrameDesign {
         let placement=videoPlacement(look:look,canvas:size,mediaAspect:sourceAspect)
         let reframe=look.autoReframe ?? false
         let rect=placement.rect
@@ -219,19 +231,22 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
         let mask=CALayer();mask.frame=CGRect(origin:.zero,size:size);mask.backgroundColor=NSColor.black.cgColor
         let hole=CALayer();hole.frame=rect;hole.backgroundColor=NSColor.white.cgColor;hole.cornerRadius=look.radius*min(size.width,size.height)/800;mask.addSublayer(hole)
         var cursors:[String:CGImage]=[:],hotspots:[String:CGPoint]=[:]
-        for shape in ["arrow","ibeam","hand","crosshair","resizeHorizontal","resizeVertical","openHand","closedHand"] {
+        if let previous,previous.settings.style==motion.style,previous.settings.color==motion.color {cursors=previous.cursors;hotspots=previous.hotspots}
+        else { for shape in ["arrow","ibeam","hand","crosshair","resizeHorizontal","resizeVertical","openHand","closedHand"] {
             cursors[shape]=cursorArtwork(style:motion.style,color:motion.color.ns,shape:shape)
             hotspots[shape]=cursorHotspot(style:motion.style,shape:shape)
         }
+        }
         let sequencedSamples=timelinePointerSamples
-        let samples=smoothPointer(sequencedSamples,settings:motion)
+        let trackingScale=max(motion.zoom,zooms.filter{$0.follow == true}.map(\.scale).max() ?? 1)
+        let paths=motionPaths(viewport:placement.followSize(zoom:trackingScale))
+        let samples=paths.cursor
         let keys=timelineKeyboardSamples
         let typing=keys.filter{$0.typing ?? false}.map(\.time)
-        let automaticZooms=autoZoomClips(samples:sequencedSamples,settings:motion,duration:editDuration.seconds,typing:typing)
-        let punches=punchZoomClips(cuts:videoClips.map(\.timelineStart),duration:editDuration.seconds,strength:motion.resolvedPunch,avoiding:zooms+automaticZooms)
+        let automaticZooms=paths.automatic
+        let punches=punchZoomClips(cuts:videoClips.map(\.timelineStart),duration:renderDuration,strength:motion.resolvedPunch,avoiding:zooms+automaticZooms)
         var clicks:[Double]=[],pressed=false
-        for s in sequencedSamples { if s.pressed && !pressed { clicks.append(s.time) };pressed=s.pressed }
-        let visibleRanges=segments.compactMap {start,end -> RenderTimeRange? in activeClip(start,end) == nil ? nil:RenderTimeRange(start:start,end:end) }
+        for s in sequencedSamples { if pointerClick(s,previous:pressed) { clicks.append(s.time) };pressed=s.pressed }
         var watermark:CGImage?=nil
         var watermarkRect:CGRect = .zero
         if let path=look.watermarkPath,let logo=NSImage(contentsOfFile:path),logo.size.width>0,logo.size.height>0,
@@ -259,36 +274,8 @@ func insertScaled(_ destination:AVMutableCompositionTrack,from track:AVAssetTrac
                               width:Double(drawn.width),height:Double(drawn.height))
         }
         // A clip that dips to black hands over at its own start, half the dip on each side of the cut.
-        let dips=clips.filter { $0.resolvedTransition>0 && $0.resolvedTransitionKind=="Dip to Black" && $0.timelineStart>0.001 }.map { RenderTimeRange(start:$0.timelineStart,end:$0.resolvedTransition) }
         // The pointer belongs to the opened recording, so it is not drawn over footage added to the project.
-        let cursorRanges=segments.compactMap {start,end -> RenderTimeRange? in activeClip(start,end)?.source == nil ? RenderTimeRange(start:start,end:end):nil }
-        let design=FrameDesign(size:size,rect:rect,placement:placement,crop:(look.videoStyle ?? VideoStyle()).cropRect,reframe:reframe,transform:preferred,background:layerImage(background,size:size),border:layerImage(border,size:size),mask:layerImage(mask,size:size),ripple:rippleArtwork(),cursors:cursors,hotspots:hotspots,samples:samples,follow:cameraFollowPath(samples,settings:motion,viewFraction:placement.followFraction(zoom:motion.zoom,reframe:reframe)),clicks:clicks,manual:zooms,auto:automaticZooms+punches,settings:motion,videoStyle:look.videoStyle ?? VideoStyle(),cameraStyle:motion.cameraStyle ?? CameraStyle(),captionCues:captions,captionStyle:captionStyle,shortcuts:keys.filter{!($0.typing ?? false)},typingTimes:typing,keyboardStyle:keyboardStyle,overlays:OverlayArtCache(captionStyle:captionStyle,keyboardStyle:keyboardStyle),duration:editDuration.seconds,cameraID:cameraID,transparent:look.isTransparent,visibleRanges:visibleRanges,annotations:annotations,fadeIn:look.resolvedFadeIn,fadeOut:look.resolvedFadeOut,dips:dips,dissolves:dissolves,secondaryID:secondaryID,watermark:watermark,watermarkRect:watermarkRect,watermarkOpacity:look.resolvedWatermarkOpacity/100,personMasks:(motion.cameraStyle ?? CameraStyle()).resolvedBackground == "None" ? nil:PersonMaskMaker(quality:size.height<=720 ? .fast: .balanced),cursorRanges:cursorRanges,handle:handle,handleRect:handleRect,handleOpacity:look.resolvedHandleOpacity/100,progressHeight:look.resolvedProgressBar*size.height/1080,progressColor:look.resolvedProgressColor)
-        let video=AVMutableVideoComposition();video.customVideoCompositorClass=FrameCompositor.self
-        video.renderSize=size;video.frameDuration=CMTime(value:1,timescale:Int32(max(1,fps)))
-        // Frame timing comes from frameDuration, not the source track: screen recordings are variable-rate,
-        // and the synthesized cursor and zoom motion needs every output frame.
-        video.instructions=[FrameInstruction(trackID:main.trackID,timeRange:CMTimeRange(start:.zero,duration:editDuration),design:design)]
-        return (composition,video,audioMix)
-    }
-    func refreshComposition() {
-        previewTask?.cancel()
-        guard let source,stillImage == nil,!busy else { return }
-        previewTask=Task { @MainActor in
-            do {
-                try await Task.sleep(for:.milliseconds(90));try Task.checkCancellation()
-                let asset=AVURLAsset(url:source)
-                let ratio=look.canvas.width/look.canvas.height
-                let h=Double(previewQuality == 0 ? 480:previewQuality == 1 ? 720:1080)
-                let size=CGSize(width:(h*ratio/2).rounded()*2,height:h)
-                let (edit,composition,audioMix)=try await makeEditingComposition(asset:asset,size:size,fps:previewQuality == 0 ? 30:min(60,exportSettings.resolvedFPS))
-                try Task.checkCancellation()
-                guard self.source == source else { return }
-                let time=position,wasPlaying=playing
-                let item=AVPlayerItem(asset:edit);item.videoComposition=composition;item.audioMix=audioMix;item.audioTimePitchAlgorithm = .spectral;player.replaceCurrentItem(with:item)
-                await player.seek(to:CMTime(seconds:time,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)
-                if wasPlaying { player.playImmediately(atRate:Float(previewSpeed)) }
-            } catch is CancellationError {} catch { message="Preview could not be prepared: \(error.localizedDescription)" }
-        }
+        return FrameDesign(size:size,rect:rect,placement:placement,crop:(look.videoStyle ?? VideoStyle()).cropRect,reframe:reframe,transform:transform,background:layerImage(background,size:size),border:layerImage(border,size:size),mask:layerImage(mask,size:size),ripple:previous?.ripple ?? rippleArtwork(),cursors:cursors,hotspots:hotspots,samples:samples,follow:paths.camera,clicks:clicks,manual:zooms,auto:automaticZooms+punches,settings:motion,videoStyle:look.videoStyle ?? VideoStyle(),cameraStyle:motion.cameraStyle ?? CameraStyle(),captionCues:captions,captionStyle:captionStyle,shortcuts:keys.filter{!($0.typing ?? false)},typingTimes:typing,keyboardStyle:keyboardStyle,overlays:(previous?.captionStyle==captionStyle && previous?.keyboardStyle==keyboardStyle && previous?.captionCues==captions && previous?.annotations==annotations && previous?.shortcuts==keys.filter{!($0.typing ?? false)} ? previous!.overlays:OverlayArtCache(captionStyle:captionStyle,keyboardStyle:keyboardStyle)),duration:renderDuration,cameraID:cameraID,transparent:look.isTransparent,visibleRanges:visibleRanges,annotations:annotations,fadeIn:look.resolvedFadeIn,fadeOut:look.resolvedFadeOut,dips:dips,dissolves:dissolves,secondaryID:secondaryID,watermark:watermark,watermarkRect:watermarkRect,watermarkOpacity:look.resolvedWatermarkOpacity/100,personMasks:(motion.cameraStyle ?? CameraStyle()).resolvedBackground == "None" ? nil:PersonMaskMaker(quality:size.height<=720 ? .fast: .balanced),cursorRanges:cursorRanges,handle:handle,handleRect:handleRect,handleOpacity:look.resolvedHandleOpacity/100,progressHeight:look.resolvedProgressBar*size.height/1080,progressColor:look.resolvedProgressColor)
     }
     func chooseCameraVideo() {
         let panel=NSOpenPanel();panel.allowedContentTypes=[.movie]

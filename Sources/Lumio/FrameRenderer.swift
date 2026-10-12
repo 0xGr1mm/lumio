@@ -271,8 +271,12 @@ final class FrameInstruction:NSObject,AVVideoCompositionInstructionProtocol,@unc
     let passthroughTrackID:CMPersistentTrackID=kCMPersistentTrackID_Invalid
     let trackID:CMPersistentTrackID
     let design:FrameDesign
-    init(trackID:CMPersistentTrackID,timeRange:CMTimeRange,design:FrameDesign) {
+    let probe:PreviewFrameProbe?
+    let revision:Int
+    let requestedAt:Double
+    init(trackID:CMPersistentTrackID,timeRange:CMTimeRange,design:FrameDesign,probe:PreviewFrameProbe?=nil,revision:Int=0) {
         self.trackID=trackID;self.design=design;self.timeRange=timeRange
+        self.probe=probe;self.revision=revision;requestedAt=ProcessInfo.processInfo.systemUptime
         var ids:[NSValue]=[];if trackID != kCMPersistentTrackID_Invalid {ids.append(NSNumber(value:trackID))};if design.cameraID != kCMPersistentTrackID_Invalid { ids.append(NSNumber(value:design.cameraID)) };if design.secondaryID != kCMPersistentTrackID_Invalid { ids.append(NSNumber(value:design.secondaryID)) };requiredSourceTrackIDs=ids
     }
 }
@@ -281,10 +285,18 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
     var requiredPixelBufferAttributesForRenderContext:[String:any Sendable] = [kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA,kCVPixelBufferIOSurfacePropertiesKey as String:[String:Int]()]
     let queue=DispatchQueue(label:"studio.lumio.compositor")
     let context=CIContext(options:[.cacheIntermediates:false])
+    private let cancellationLock=NSLock()
+    private var cancellationGeneration=0
+    private var currentGeneration:Int {cancellationLock.lock();defer {cancellationLock.unlock()};return cancellationGeneration}
+    func cancelAllPendingVideoCompositionRequests() {
+        cancellationLock.lock();cancellationGeneration &+= 1;cancellationLock.unlock()
+    }
     func renderContextChanged(_ newRenderContext:AVVideoCompositionRenderContext) {}
     func startRequest(_ request:AVAsynchronousVideoCompositionRequest) {
+        let generation=currentGeneration
         queue.async {
             autoreleasepool {
+                guard generation==self.currentGeneration else {request.finishCancelledRequest();return}
                 guard let instruction=request.videoCompositionInstruction as? FrameInstruction,let output=request.renderContext.newPixelBuffer() else { request.finish(with:NSError(domain:"Lumio.render",code:1));return }
                 let source=instruction.trackID == kCMPersistentTrackID_Invalid ? nil:request.sourceFrame(byTrackID:instruction.trackID)
                 let camera=instruction.design.cameraID == kCMPersistentTrackID_Invalid ? nil:request.sourceFrame(byTrackID:instruction.design.cameraID)
@@ -301,11 +313,11 @@ final class FrameCompositor:NSObject,AVVideoCompositing,@unchecked Sendable {
                     else if weight>0.001 { image=self.opacity(incoming,weight).composited(over:image).cropped(to:CGRect(origin:.zero,size:instruction.design.size)) }
                 }
                 self.context.render(image,to:output,bounds:CGRect(origin:.zero,size:instruction.design.size),colorSpace:CGColorSpaceCreateDeviceRGB())
+                instruction.probe?.record(revision:instruction.revision,time:time,sent:instruction.requestedAt)
                 request.finish(withComposedVideoFrame:output)
             }
         }
     }
-    func cancelAllPendingVideoCompositionRequests() { queue.sync {} }
     func opacity(_ image:CIImage,_ amount:Double)->CIImage { image.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:amount)]) }
     func fitted(_ image:CIImage,to rect:CGRect,mirror:Bool=false)->CIImage {
         let normalized=image.transformed(by:CGAffineTransform(translationX:-image.extent.minX,y:-image.extent.minY))

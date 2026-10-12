@@ -9,7 +9,8 @@ struct ZoomClip: Codable, Equatable, Identifiable {
     var y = 0.5
     var transition = 0.5
     var smooth = true
-    /// Automatic zooms follow the pointer unless false (typing zooms hold on the field).
+    /// Automatic zooms follow unless false. Editable clips follow only when explicitly true;
+    /// nil preserves the fixed target of authored and older manual zooms.
     var follow: Bool? = nil
 }
 struct ZoomPose: Equatable {
@@ -57,8 +58,10 @@ func zoomPose(at time: Double, clips: [ZoomClip]) -> ZoomPose {
 }
 @MainActor extension Studio {
     func selectAutomaticZoom(_ clip:ZoomClip) {
-        let generated=autoZoomClips(samples:timelinePointerSamples,settings:motion,duration:duration,typing:timelineTypingTimes)
-        zooms.append(contentsOf:generated)
+        let generated=plannedAutomaticZooms
+        // Preserve generated behavior when making it editable, including typing's fixed target.
+        let editable=generated.map { original in var value=original;value.follow=original.follow ?? true;return value }
+        zooms.append(contentsOf:editable)
         selectedZoom=generated.first(where:{abs($0.start-clip.start)<0.001 && abs($0.end-clip.end)<0.001})?.id
         timelineFocus = .zoom
         motion.autoZoom=false
@@ -111,7 +114,7 @@ struct ZoomInspector: View {
                             .frame(width:geo.size.width/zoom.scale,height:geo.size.height/zoom.scale)
                             .position(x:geo.size.width*zoom.x,y:geo.size.height*zoom.y)
                     }.clipped().contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged { v in
-                        studio.update(\.zooms,id:id) { $0.x=min(1,max(0,v.location.x/geo.size.width));$0.y=min(1,max(0,v.location.y/geo.size.height)) }
+                        studio.update(\.zooms,id:id) { $0.follow=false;$0.x=min(1,max(0,v.location.x/geo.size.width));$0.y=min(1,max(0,v.location.y/geo.size.height)) }
                     })
                 }.frame(height:125)
                 field("Start (s)",value:studio.binding(\.zooms,id:id,\.start,fallback:zoom.start,clamp:{ [weak studio] in max(0,min($0,(studio?.zooms.first{$0.id == id}?.end ?? 0)-0.1)) }))
@@ -121,7 +124,8 @@ struct ZoomInspector: View {
                 Text(String(format:"Transition · %.2f s",zoom.transition)).font(.caption)
                 Slider(value:studio.binding(\.zooms,id:id,\.transition,fallback:zoom.transition),in:0...2)
                 Toggle("Smooth Transition",isOn:studio.binding(\.zooms,id:id,\.smooth,fallback:zoom.smooth))
-                Button("Center Target") { studio.update(\.zooms,id:id) { $0.x=0.5;$0.y=0.5 } }
+                Toggle("Follow Cursor",isOn:Binding(get:{studio.zooms.first{$0.id==id}?.follow ?? false},set:{value in studio.update(\.zooms,id:id){$0.follow=value}}))
+                Button("Center Target") { studio.update(\.zooms,id:id) { $0.follow=false;$0.x=0.5;$0.y=0.5 } }
                 Button("Delete Zoom",role:.destructive) { studio.deleteTimelineItem(.zoom,id:id) }
             } else { Text("Select a purple zoom block in the timeline to edit it.").font(.caption).foregroundStyle(.secondary) }
         }

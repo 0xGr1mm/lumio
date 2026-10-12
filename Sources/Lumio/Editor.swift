@@ -3,7 +3,7 @@ import AVKit
 
 struct Editor: View {
     @ObservedObject var studio: Studio
-    @State var tab = "Quick"
+    @State var tab = "Background"
     @State var library = false
     @State var presetLabel = "Twilight"
     @State var backgroundTab="wallpaper"
@@ -31,21 +31,19 @@ struct Editor: View {
                     transport
                 }.frame(maxWidth:.infinity,maxHeight:.infinity)
                 Divider()
-                inspectorRail
-                Divider()
-                inspector.id(tab + (studio.selectedZoom?.uuidString ?? "")).frame(width:315)
+                VStack(spacing:0) { inspectorNavigation;Divider();inspector }.frame(width:320)
             }
             Divider()
             TimelineEditor(studio:studio,selectZoom:{ tab = "Zoom" },selectCaption:{ tab = "Captions" },selectMarker:{ tab = "Markers" },selectAnnotation:{ tab = "Annotate" })
             Divider()
             HStack(spacing:7) {
                 Circle().fill(accent).frame(width:5,height:5)
-                Text(studio.exportProgress.map { "Exporting… \(Int($0*100))%" } ?? (studio.busy ? "Processing…" : "Changes applied to preview"))
+                Text(studio.exportProgress.map { "Exporting… \(Int($0*100))%" } ?? (studio.busy ? "Processing…" : "Preview ready"))
                 Spacer()
-                Text("\(Int(studio.look.canvas.width)) × \(Int(studio.look.canvas.height)) · \(studio.stillImage == nil ? "\(studio.exportSettings.resolvedFormat) · \(studio.exportSettings.resolvedFPS) fps" : "PNG") · No watermark")
+                Text("\(Int(studio.look.canvas.width)) × \(Int(studio.look.canvas.height)) · \(studio.stillImage == nil ? "\(studio.exportSettings.resolvedFormat) · \(studio.exportSettings.resolvedFPS) fps" : "PNG")")
             }.font(.system(size:11)).foregroundStyle(.secondary).padding(.horizontal,18).padding(.vertical,9)
         }.background(Color(white:0.055)).preferredColorScheme(.dark).tint(accent)
-        .frame(minWidth:1180,minHeight:800)
+        .frame(minWidth:1040,minHeight:720)
         .onChange(of:studio.source) {if !studio.retakes.isEmpty {tab="Retakes"}}
         .onAppear { if !studio.retakes.isEmpty {tab="Retakes"};studio.previousSnapshot=studio.snapshot;studio.refreshComposition() }
         .onChange(of:studio.snapshot) { studio.recordEdit() }
@@ -70,7 +68,7 @@ struct Editor: View {
             Button { library.toggle() } label: { Image(systemName:"sidebar.left") }.help("Library").accessibilityLabel("Library")
             Text(studio.source?.deletingPathExtension().lastPathComponent ?? "New Project").lineLimit(1).foregroundStyle(.secondary).padding(.leading,6)
             Spacer()
-            Button { studio.onShowRecorder?() } label: { Image(systemName:"record.circle") }.help("New Recording").accessibilityLabel("New Recording").disabled(studio.busy)
+            Button { studio.onShowRecorder?() } label: { Label("Record",systemImage:"record.circle") }.help("New Recording").accessibilityLabel("New Recording").disabled(studio.busy)
             if let exported=studio.lastExportURL {
                 ShareLink(item:exported) { Image(systemName:"paperplane") }.help("Share \(exported.lastPathComponent) with AirDrop, Messages, Mail and more").accessibilityLabel("Share Last Export")
                 Button { NSWorkspace.shared.activateFileViewerSelecting([exported]) } label: { Image(systemName:"folder") }.help("Show the last export in Finder").accessibilityLabel("Show Last Export")
@@ -81,12 +79,14 @@ struct Editor: View {
                 Button("Open Project…") { studio.openProject() }
                 Button("Save Project…") { studio.saveProject() }
                 Button("Save Look as Default") { studio.saveDefaultLook() }
-            } label: { Image(systemName:"ellipsis") }
+            } label: { Image(systemName:"ellipsis") }.fixedSize().accessibilityLabel("Project menu")
             if let progress=studio.exportProgress {
                 ProgressView(value:progress).frame(width:110)
                 Text("\(Int(progress*100))%").monospacedDigit().foregroundStyle(.secondary)
                 Button("Cancel") { studio.cancelExport() }.disabled(studio.exportTask == nil)
             }
+            Button { studio.startExport() } label: { Label(studio.exportRange == nil ? "Export":"Export Selection",systemImage:"square.and.arrow.up") }
+                .buttonStyle(.borderedProminent).foregroundStyle(.black).disabled(studio.source == nil || studio.busy).help(exportButtonTitle)
             Menu {
                 Menu("Made for…") {
                     ForEach(exportPresets) { preset in
@@ -118,8 +118,8 @@ struct Editor: View {
                         .disabled(studio.duration <= 0 || studio.busy)
                         .help("The frame under the playhead, for a thumbnail or a post")
                 }
-            } label: { Image(systemName:studio.busy ? "hourglass":"square.and.arrow.up").foregroundStyle(.black) }
-                .help(studio.busy ? "Processing":"Export").accessibilityLabel("Export").menuStyle(.borderlessButton).buttonStyle(.borderedProminent).disabled(studio.source == nil || studio.busy)
+            } label: { Image(systemName:"chevron.down") }
+                .fixedSize().help("Export Settings").accessibilityLabel("Export Settings").disabled(studio.source == nil || studio.busy)
         }.buttonStyle(.bordered).controlSize(.small).font(.system(size:12)).padding(.horizontal,18).padding(.vertical,12).background(panel)
         .background {
             HStack {
@@ -141,7 +141,7 @@ struct Editor: View {
             Menu {
                 Picker("Preview Quality",selection:$studio.previewQuality) { Text("Fast · 480p").tag(0);Text("Balanced · 720p").tag(1);Text("High · 1080p").tag(2) }
                 Picker("Playback Speed",selection:$studio.previewSpeed) { ForEach([0.25,0.5,1.0,1.5,2.0],id:\.self) { Text(String(format:"%.2g×",$0)).tag($0) } }
-            } label:{Image(systemName:"gauge.with.dots.needle.50percent")}.help("Preview Quality and Speed")
+            } label:{Label("Preview",systemImage:"gauge.with.dots.needle.50percent")}.fixedSize().help("Preview Quality and Speed")
             Spacer()
             Picker("Canvas",selection:$studio.look.aspect) { ForEach(["16:9","9:16","1:1","4:3","4:5"],id:\.self) { Text($0).tag($0) } }.labelsHidden().frame(width:92)
             Toggle(isOn:Binding(get:{studio.look.autoReframe ?? false},set:{studio.look.autoReframe=$0})) { Image(systemName:"viewfinder.rectangular") }
@@ -150,33 +150,41 @@ struct Editor: View {
             Menu { Button("Reset Look") { studio.look = Look() }; Button("Save as Default") { studio.saveDefaultLook() } } label: { Image(systemName:"paintbrush.pointed") }.help("Look").fixedSize()
         }.font(.system(size:12)).padding(.horizontal,26).padding(.top,16)
     }
-    /// Seventeen panels do not fit beside a short window, so the rail scrolls rather than hiding the last icons.
-    /// They are in the order a recording is usually finished in: the quick pass first, then the picture, then the details.
-    var inspectorRail:some View {
-        ScrollView(.vertical) {
-            VStack(spacing:8) {
-                ForEach([("Quick","wand.and.rays"),("Zoom","viewfinder"),("Background","photo.on.rectangle.angled"),("Video","play.rectangle"),("Captions","captions.bubble.fill"),("Privacy","lock.shield.fill"),("Cleanup","wand.and.stars"),("Cursor","cursorarrow"),("Camera","video"),("Annotate","pencil.tip.crop.circle"),("Audio","speaker.wave.2.fill"),("Animations","sparkles"),("Markers","bookmark"),("Transcript","text.quote"),("Retakes","arrow.triangle.2.circlepath"),("Versions","square.stack.3d.up"),("Shortcuts","command.square.fill")],id:\.0) { item in
-                    Button { tab = item.0 } label: { Image(systemName:item.1).font(.system(size:18)).foregroundStyle(tab == item.0 ? accent : .gray).frame(width:36,height:34).contentShape(Rectangle()).background(tab == item.0 ? accent.opacity(0.09) : .clear).clipShape(RoundedRectangle(cornerRadius:8)) }.buttonStyle(.plain).help(item.0).accessibilityLabel(item.0)
+    var inspectorNavigation:some View {
+        VStack(spacing:10) {
+            LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:6),count:3),spacing:6) {
+                ForEach([("Background","photo.on.rectangle.angled"),("Design","rectangle.on.rectangle"),("Zoom","viewfinder"),("Cursor","cursorarrow"),("Audio","speaker.wave.2"),("Captions","captions.bubble"),("Camera","video"),("Transcript","text.quote"),("Shortcuts","command.square")],id:\.0) { item in
+                    Button {tab=item.0} label: {
+                        VStack(spacing:5) {Image(systemName:item.1).font(.system(size:16));Text(item.0).font(.system(size:11,weight:.medium))}
+                            .frame(maxWidth:.infinity).frame(height:50)
+                            .foregroundStyle(tab==item.0 ? accent:.secondary)
+                            .background(tab==item.0 ? accent.opacity(0.10):Color.white.opacity(0.035))
+                            .clipShape(RoundedRectangle(cornerRadius:8))
+                    }.buttonStyle(.plain).accessibilityLabel(item.0).accessibilityValue(tab==item.0 ? "Selected":"")
                 }
             }
-            .padding(.vertical,10).frame(width:50)
-        }
-        .scrollIndicators(.visible)
-        .frame(width:50)
+            Menu {
+                ForEach(["Quick","Privacy","Cleanup","Annotate","Markers","Retakes","Versions","Animations","Video"],id:\.self) { name in
+                    Button(name) {tab=name}
+                }
+            } label: {Label("More tools",systemImage:"ellipsis.circle")}.fixedSize().font(.system(size:11)).accessibilityLabel("More tools")
+        }.padding(14).background(panel)
     }
     var inspector:some View {
         ScrollView {
             VStack(alignment:.leading,spacing:20) {
                 Text(tab).font(.system(size:16,weight:.semibold))
-                if tab == "Quick" { QuickPanel(studio:studio) }
+                if tab == "Design" { designControls }
+                else if tab == "Quick" { QuickPanel(studio:studio) }
                 else if tab == "Privacy" { PrivacyPanel(studio:studio) }
                 else if tab == "Background" {
                     Picker("Background",selection:$backgroundTab) {
-                        Image(systemName:"photo.on.rectangle").tag("wallpaper")
-                        Image(systemName:"circle.lefthalf.filled").tag("gradient")
-                        Image(systemName:"paintpalette").tag("color")
-                        Image(systemName:"photo").tag("image")
-                    }.pickerStyle(.segmented).onChange(of:backgroundTab) { if backgroundTab == "color" { studio.look.mode="Color" };if backgroundTab == "gradient" { studio.look.mode="Gradient" } }
+                        Text("Wallpaper").tag("wallpaper")
+                        Text("Gradient").tag("gradient")
+                        Text("Color").tag("color")
+                        Text("Image").tag("image")
+                    }.pickerStyle(.segmented).labelsHidden().onChange(of:backgroundTab) { if backgroundTab == "color" { studio.look.mode="Color" };if backgroundTab == "gradient" { studio.look.mode="Gradient" };if backgroundTab == "image" { studio.look.mode="Image" } }
+                    DisclosureGroup("Layout & frame") { designLayoutControls.padding(.top,12) }
                     if backgroundTab == "wallpaper" { WallpaperPanel(studio:studio) } else { backgroundControls }
                 }
                 else if tab == "Retakes" { RetakePanel(studio:studio) }

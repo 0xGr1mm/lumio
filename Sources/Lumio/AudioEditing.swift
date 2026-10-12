@@ -84,15 +84,13 @@ struct AudioPanel:View {
     @State private var category="Lo-Fi"
     var body:some View {
         VStack(alignment:.leading,spacing:18) {
-            Text("Voiceover").font(.headline)
-            Picker("Input Microphone",selection:$studio.microphoneID) {Text("System Default").tag("");ForEach(devices.microphones,id:\.uniqueID){Text($0.localizedName).tag($0.uniqueID)}}
-            Button {Task{await studio.toggleVoiceover()}} label:{Image(systemName:studio.voiceoverRecording ? "stop.fill":"mic.fill").frame(maxWidth:.infinity).padding(7)}.buttonStyle(.borderedProminent).tint(studio.voiceoverRecording ? .red:accent).foregroundStyle(.black).help(studio.voiceoverRecording ? "Stop Voiceover":"Record Voiceover at Playhead")
-            Divider();Text("Background Music").font(.headline)
-            ScrollView(.horizontal,showsIndicators:false){HStack{ForEach(["Lo-Fi","Ambient","Instrumental","Electronic","Cinematic"],id:\.self){name in Button{name == category ? ():(category=name)}label:{Text(name).font(.caption).padding(.horizontal,10).padding(.vertical,5).background(category == name ? .white.opacity(0.22):.white.opacity(0.07)).clipShape(Capsule())}.buttonStyle(.plain)}}}
-            ForEach(bundledMusic.filter{$0.category==category}){music in HStack{Button{studio.addBundledMusic(music)}label:{Image(systemName:"plus.circle")}.help("Add \(music.name) to Timeline");Text(music.name);Spacer();Text(music.length).foregroundStyle(.secondary);Button{studio.previewMusic(music)}label:{Image(systemName:"play.circle")}.help("Preview \(music.name)")}}
-            Divider();Toggle("Duck system audio under voice",isOn:$studio.audioSettings.ducking)
-            if studio.audioSettings.ducking {MotionSlider(title:"Duck Level",value:$studio.audioSettings.duckLevel,range:0...1)}
-            Divider();Text("Recording Audio").font(.headline)
+            if let clip=studio.selectedVideoClip {
+                Text("Selected clip").font(.system(size:13,weight:.semibold))
+                MotionSlider(title:"Volume",value:Binding(get:{studio.selectedVideoClip?.resolvedVolume ?? 1},set:{studio.setClipVolume(clip.id,to:$0)}),range:0...1)
+                Toggle("Mute clip",isOn:Binding(get:{(studio.selectedVideoClip?.resolvedVolume ?? 1)<0.001},set:{studio.setClipVolume(clip.id,to:$0 ? 0:1)}))
+                Divider()
+            }
+            Text("Recording audio").font(.system(size:13,weight:.semibold))
             MotionSlider(title:"System",value:$studio.audioSettings.systemVolume,range:0...1)
             if studio.microphonePath != nil {
                 MotionSlider(title:"Microphone",value:Binding(get:{studio.audioSettings.microphoneVolume ?? 1},set:{studio.audioSettings.microphoneVolume=$0}),range:0...1)
@@ -109,6 +107,22 @@ struct AudioPanel:View {
             Divider();HStack{Text("Mixer").font(.headline);Spacer();Button{studio.chooseAudioTrack()}label:{Image(systemName:"plus")}.help("Add Audio Track")}
             if studio.audioTracks.isEmpty {Text("No audio tracks").font(.caption).foregroundStyle(.secondary)}
             ForEach($studio.audioTracks){$track in HStack{Button{track.muted.toggle()}label:{Image(systemName:track.muted ? "speaker.slash.fill":"speaker.wave.2.fill")}.help(track.muted ? "Unmute":"Mute");VStack(alignment:.leading){Text(track.name).lineLimit(1);Slider(value:$track.volume,in:0...1)};Button{studio.audioTracks.removeAll{$0.id==track.id}}label:{Image(systemName:"trash")}.help("Delete Audio Track")}.font(.caption)}
+            DisclosureGroup("Voiceover & music") {
+                VStack(alignment:.leading,spacing:14) {
+            Text("Voiceover").font(.headline)
+            Picker("Input Microphone",selection:$studio.microphoneID) {Text("System Default").tag("");ForEach(devices.microphones,id:\.uniqueID){Text($0.localizedName).tag($0.uniqueID)}}
+            Button {Task{await studio.toggleVoiceover()}} label:{Image(systemName:studio.voiceoverRecording ? "stop.fill":"mic.fill").frame(maxWidth:.infinity).padding(7)}.buttonStyle(.borderedProminent).tint(studio.voiceoverRecording ? .red:accent).foregroundStyle(.black).help(studio.voiceoverRecording ? "Stop Voiceover":"Record Voiceover at Playhead")
+            Divider();Text("Background Music").font(.headline)
+            ScrollView(.horizontal,showsIndicators:false){HStack{ForEach(["Lo-Fi","Ambient","Instrumental","Electronic","Cinematic"],id:\.self){name in Button{name == category ? ():(category=name)}label:{Text(name).font(.caption).padding(.horizontal,10).padding(.vertical,5).background(category == name ? .white.opacity(0.22):.white.opacity(0.07)).clipShape(Capsule())}.buttonStyle(.plain)}}}
+            ForEach(bundledMusic.filter{$0.category==category}){music in HStack{Button{studio.addBundledMusic(music)}label:{Image(systemName:"plus.circle")}.help("Add \(music.name) to Timeline");Text(music.name);Spacer();Text(music.length).foregroundStyle(.secondary);Button{studio.previewMusic(music)}label:{Image(systemName:"play.circle")}.help("Preview \(music.name)")}}
+                }.padding(.top,12)
+            }
+            DisclosureGroup("Mixing options") {
+                VStack(alignment:.leading,spacing:14) {
+            Divider();Toggle("Duck system audio under voice",isOn:$studio.audioSettings.ducking)
+            if studio.audioSettings.ducking {MotionSlider(title:"Duck Level",value:$studio.audioSettings.duckLevel,range:0...1)}
+                }.padding(.top,12)
+            }
         }.font(.system(size:12)).onAppear{devices.refresh()}
     }
 }
