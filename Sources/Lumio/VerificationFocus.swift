@@ -50,7 +50,61 @@ import Foundation
     let rate=try await track.load(.nominalFrameRate),duration=try await asset.load(.duration).seconds
     try require(rate>=59 && abs(duration-3)<0.05,"focus export lost its 60 fps presentation clock or duration")
     let elapsed=ProcessInfo.processInfo.systemUptime-begin
-    return ["PASS region camera stays steady and motion agrees across 30/120 Hz recording traces",
+    // What "smooth" actually means here, in numbers: the camera must leave early, arrive without
+    // swinging past its target, and settle in a time a viewer reads as deliberate rather than abrupt.
+    // A jump between two resting places is the move the whole feature is built around.
+    func step(_ hold:Double=1.2)->[PointerSample] {
+        var path:[PointerSample]=[]
+        var time=0.0
+        while time<hold { path.append(PointerSample(time:time,x:0.25,y:0.5,pressed:false));time+=1/60 }
+        path.append(PointerSample(time:time,x:0.25,y:0.5,pressed:true,shape:"arrow",clickEdge:true))
+        time+=1/60
+        while time<hold*2.6 { path.append(PointerSample(time:time,x:0.78,y:0.5,pressed:false));time+=1/60 }
+        return path
+    }
+    func describe(_ motionStyle:String)->(lead:Double,settle:Double,overshoot:Double,jerk:Double) {
+        var tuned=MotionSettings();tuned.motion=motionStyle
+        let planned=plannedCameraPath(step(),settings:tuned,viewport:viewport)
+        let jump=1.2, target=0.78, from=0.25
+        let moving=planned.filter{ $0.time>=jump-0.6 }
+        // When it starts: the first sample that has covered a fiftieth of the distance.
+        let lead=(moving.first{ abs($0.x-from)>(target-from)*0.02 }?.time ?? jump)-jump
+        // When it is there: the last moment it is still more than two percent away.
+        let settle=((moving.last{ abs($0.x-target)>(target-from)*0.02 }?.time ?? jump)-jump)
+        let overshoot=max(0,(moving.map(\.x).max() ?? target)-target)/(target-from)
+        // Jerk is read off an evenly spaced resampling of the path. The planned path deliberately keeps
+        // the recording's own event times as well as its fixed clock, so differencing it as-is measures
+        // the uneven spacing rather than the motion.
+        var jerk=0.0
+        let dt=1.0/60
+        var xs:[Double]=[]
+        var clock=(moving.first?.time ?? 0)
+        let endTime=(moving.last?.time ?? 0)
+        while clock<=endTime { xs.append(pointerAt(clock,samples:planned)?.x ?? target);clock+=dt }
+        if xs.count>3 {
+            for index in 3..<xs.count {
+                let third=(xs[index]-3*xs[index-1]+3*xs[index-2]-xs[index-3])/(dt*dt*dt)
+                jerk=max(jerk,abs(third))
+            }
+        }
+        return (lead,settle,overshoot,jerk)
+    }
+    let focused=describe("focused"), fluid=describe("fluid")
+    try require(focused.lead < -0.05,"the focused camera does not leave before the pointer does: \(focused.lead) s")
+    try require(fluid.lead < -0.05,"the fluid camera does not leave before the pointer does: \(fluid.lead) s")
+    try require(focused.overshoot<0.005 && fluid.overshoot<0.005,"the camera swings past its target: \(focused.overshoot) / \(fluid.overshoot)")
+    // The move is measured from the moment it leaves to the moment it arrives, because the camera sets
+    // off before the pointer does; counting only from the jump would call an anticipated move instant.
+    let focusedMove=focused.settle-focused.lead, fluidMove=fluid.settle-fluid.lead
+    try require(focusedMove>0.3 && focusedMove<1.2,"the focused move takes \(focusedMove) s, outside the range that reads as deliberate")
+    try require(fluidMove>focusedMove+0.08,"fluid is not calmer than focused: \(fluidMove) vs \(focusedMove) s")
+    try require(fluidMove<2.0,"the fluid move takes \(fluidMove) s, which reads as lag")
+    // Handing the spring a stepped goal measures about 2500 per s³ here; the eased goal has to stay far
+    // below that, because the opening yank is the part of the move that reads as abrupt.
+    try require(focused.jerk<700 && fluid.jerk<700,"the camera starts too sharply: \(focused.jerk) / \(fluid.jerk) per s³")
+    return [String(format:"PASS camera leaves %.0f/%.0f ms early and completes the move in %.2f/%.2f s with no overshoot, peak jerk %.0f/%.0f per s³ (focused/fluid)",
+                   -focused.lead*1000,-fluid.lead*1000,focusedMove,fluidMove,focused.jerk,fluid.jerk),
+            "PASS region camera stays steady and motion agrees across 30/120 Hz recording traces",
             "PASS playhead updates reuse motion paths and automatic zoom identities; new samples invalidate them",
             String(format:"PASS planned motion exports 720p / 60 fps / %.2f s in %.2f s",duration,elapsed)]
 }

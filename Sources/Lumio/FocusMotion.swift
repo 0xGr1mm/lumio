@@ -70,20 +70,34 @@ func plannedCameraPath(_ samples:[PointerSample],settings:MotionSettings,viewpor
     let path=presentationPointerSamples(samples)
     let regions=focusRegions(path,viewport:viewport)
     guard !regions.isEmpty else{return samples}
-    let omega=settings.motion == "fluid" ? 11.0:16.0
-    let lead=settings.motion == "fluid" ? 0.28:0.22
+    // Slower than a spring that merely looks settled on paper: a move a viewer reads as deliberate runs
+    // about half a second, which is also where the hand-made reference editors sit.
+    let omega=settings.motion == "fluid" ? 10.0:13.5
+    let lead=settings.motion == "fluid" ? 0.3:0.24
+    // The goal is eased into rather than snapped to. A critically damped spring pulled at a step target
+    // has its greatest acceleration on the very first frame, and that opening yank is what reads as abrupt;
+    // filtering the goal first gives the move an S-shaped start without letting it overshoot.
+    // Two stages, not one: a single filter still hands the spring a goal whose speed jumps the instant a
+    // region changes, and that jump is an acceleration step the eye reads as a yank. Cascading two makes
+    // the goal leave at zero speed, so the move eases in as well as out.
+    let goalEase=settings.motion == "fluid" ? 11.0:15.0
     var region=0,x=regions[0].x,y=regions[0].y,vx=0.0,vy=0.0,previous=path[0].time
+    var easedX=regions[0].x,easedY=regions[0].y
+    var rampX=regions[0].x,rampY=regions[0].y
     return path.map {input in
         while region+1<regions.count && input.time>=regions[region+1].start {region+=1}
         var target=region
         while target+1<regions.count && !regions[target+1].reset && input.time+lead>=regions[target+1].start {target+=1}
         let goal=regions[target],dt=max(0,input.time-previous);previous=input.time
-        if input.motionReset == true {x=input.x;y=input.y;vx=0;vy=0}
+        if input.motionReset == true {x=input.x;y=input.y;vx=0;vy=0;easedX=input.x;easedY=input.y;rampX=input.x;rampY=input.y}
         else {
+            let settle=1-exp(-goalEase*dt)
+            rampX+=(goal.x-rampX)*settle;rampY+=(goal.y-rampY)*settle
+            easedX+=(rampX-easedX)*settle;easedY+=(rampY-easedY)*settle
             // Exact critically damped spring step: independent of sampling cadence and never overshoots.
-            let decay=exp(-omega*dt),dx=x-goal.x,dy=y-goal.y
+            let decay=exp(-omega*dt),dx=x-easedX,dy=y-easedY
             let ax=vx+omega*dx,ay=vy+omega*dy
-            x=goal.x+(dx+ax*dt)*decay;y=goal.y+(dy+ay*dt)*decay
+            x=easedX+(dx+ax*dt)*decay;y=easedY+(dy+ay*dt)*decay
             vx=(vx-omega*ax*dt)*decay;vy=(vy-omega*ay*dt)*decay
         }
         var output=input;output.x=min(1,max(0,x));output.y=min(1,max(0,y));return output
