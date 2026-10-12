@@ -84,6 +84,11 @@ struct MotionSettings: Codable, Equatable {
     /// Plays a short rush under every cut.
     var cutSound: Bool? = nil
     var resolvedCutSound: Bool { cutSound ?? false }
+    /// How calm the camera is, 0…100. Zero follows briskly, a hundred drifts. The preset sets a starting
+    /// point and this moves it from there, because how fast a camera should travel is a matter of taste
+    /// and of what is being recorded.
+    var cameraSmoothness: Double? = nil
+    var resolvedCameraSmoothness: Double { let value=cameraSmoothness ?? 50;return value.isFinite ? max(0,min(100,value)):50 }
     /// How hard the picture snaps in at a cut, 0…100. Off at zero.
     var punchOnCut: Double? = nil
     var resolvedPunch: Double { let value=punchOnCut ?? 0;return value.isFinite ? max(0,min(100,value)):0 }
@@ -104,6 +109,7 @@ struct MotionSettings: Codable, Equatable {
         value.color=value.color.normalized();value.blurAmount=max(0,min(1,value.blurAmount.isFinite ? value.blurAmount:0.8));value.blurCursor=max(0,min(1,value.blurCursor.isFinite ? value.blurCursor:1));value.blurScreen=max(0,min(1,value.blurScreen.isFinite ? value.blurScreen:0.8));value.blurZoom=max(0,min(1,value.blurZoom.isFinite ? value.blurZoom:1));value.snap=max(0,min(1,value.snap.isFinite ? value.snap:0.25));value.blurQuality=max(0,min(2,value.blurQuality))
         value.stiffness=max(20,min(1000,value.stiffness.isFinite ? value.stiffness:470));value.damping=max(1,min(150,value.damping.isFinite ? value.damping:70));value.mass=max(0.2,min(10,value.mass.isFinite ? value.mass:3));value.threshold=max(0,min(1000,value.threshold.isFinite ? value.threshold:500))
         value.cameraStyle=(value.cameraStyle ?? CameraStyle()).normalized()
+        if value.cameraSmoothness != nil { value.cameraSmoothness=value.resolvedCameraSmoothness }
         if value.punchOnCut != nil { value.punchOnCut=value.resolvedPunch }
         if value.spotlight != nil { value.spotlight=value.resolvedSpotlight }
         if value.spotlightSize != nil { value.spotlightSize=value.resolvedSpotlightSize }

@@ -90,6 +90,22 @@ import Foundation
         }
         return (lead,settle,overshoot,jerk)
     }
+    func describeSmoothness(_ value:Double)->(lead:Double,settle:Double,overshoot:Double,jerk:Double) {
+        var tuned=MotionSettings();tuned.cameraSmoothness=value
+        let planned=plannedCameraPath(step(),settings:tuned,viewport:viewport)
+        let jump=1.2, target=0.78, from=0.25
+        let moving=planned.filter{ $0.time>=jump-0.6 }
+        let lead=(moving.first{ abs($0.x-from)>(target-from)*0.02 }?.time ?? jump)-jump
+        let settle=((moving.last{ abs($0.x-target)>(target-from)*0.02 }?.time ?? jump)-jump)
+        let overshoot=max(0,(moving.map(\.x).max() ?? target)-target)/(target-from)
+        return (lead,settle,overshoot,0)
+    }
+    let brisk=describeSmoothness(0), drifting=describeSmoothness(100)
+    let briskMove=brisk.settle-brisk.lead, driftingMove=drifting.settle-drifting.lead
+    try require(driftingMove>briskMove+0.2,"the smoothness control does not change how long the camera takes: \(briskMove) vs \(driftingMove) s")
+    try require(brisk.overshoot<0.005 && drifting.overshoot<0.005,"a smoothness setting let the camera swing past its target")
+    lines.append(String(format:"PASS the smoothness control runs the move from %.2f s to %.2f s without overshoot at either end",briskMove,driftingMove))
+
     let focused=describe("focused"), fluid=describe("fluid")
     try require(focused.lead < -0.05,"the focused camera does not leave before the pointer does: \(focused.lead) s")
     try require(fluid.lead < -0.05,"the fluid camera does not leave before the pointer does: \(fluid.lead) s")

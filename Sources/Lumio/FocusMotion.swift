@@ -71,16 +71,18 @@ func plannedCameraPath(_ samples:[PointerSample],settings:MotionSettings,viewpor
     let regions=focusRegions(path,viewport:viewport)
     guard !regions.isEmpty else{return samples}
     // Slower than a spring that merely looks settled on paper: a move a viewer reads as deliberate runs
-    // about half a second, which is also where the hand-made reference editors sit.
-    let omega=settings.motion == "fluid" ? 10.0:13.5
-    let lead=settings.motion == "fluid" ? 0.3:0.24
+    // about half a second, which is also where the hand-made reference editors sit. The preset picks the
+    // middle of a range and the smoothness control slides along it.
+    let calm=(settings.resolvedCameraSmoothness-50)/50
+    let omega=max(5.5,(settings.motion == "fluid" ? 10.0:13.5)-calm*4.5)
+    let lead=(settings.motion == "fluid" ? 0.3:0.24)+calm*0.06
     // The goal is eased into rather than snapped to. A critically damped spring pulled at a step target
     // has its greatest acceleration on the very first frame, and that opening yank is what reads as abrupt;
     // filtering the goal first gives the move an S-shaped start without letting it overshoot.
     // Two stages, not one: a single filter still hands the spring a goal whose speed jumps the instant a
     // region changes, and that jump is an acceleration step the eye reads as a yank. Cascading two makes
     // the goal leave at zero speed, so the move eases in as well as out.
-    let goalEase=settings.motion == "fluid" ? 11.0:15.0
+    let goalEase=max(6.0,(settings.motion == "fluid" ? 11.0:15.0)-calm*4.0)
     var region=0,x=regions[0].x,y=regions[0].y,vx=0.0,vy=0.0,previous=path[0].time
     var easedX=regions[0].x,easedY=regions[0].y
     var rampX=regions[0].x,rampY=regions[0].y
@@ -113,7 +115,7 @@ extension MotionSettings {
     }
     var pathPlanningSettings:MotionSettings {
         var key=automaticPlanningSettings
-        key.motion=motion;key.smoothing=smoothing;key.cursorAnimation=cursorAnimation
+        key.motion=motion;key.smoothing=smoothing;key.cursorAnimation=cursorAnimation;key.cameraSmoothness=cameraSmoothness
         key.stiffness=stiffness;key.damping=damping;key.mass=mass
         key.shakeFilter=shakeFilter;key.threshold=threshold
         return key
