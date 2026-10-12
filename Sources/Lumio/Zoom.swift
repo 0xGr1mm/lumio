@@ -105,18 +105,41 @@ struct ZoomInspector: View {
             // Every control binds by id: deleting the selected zoom while the panel is open would leave a stale index behind.
             if let zoom = studio.zooms.first(where:{$0.id == studio.selectedZoom}) {
                 let id = zoom.id
-                Text("Choose the target by clicking the video or dragging in the area below.").font(.caption).foregroundStyle(.secondary)
+                Text("Drag inside the frame to aim the zoom. The corner handle sets how close it goes.")
+                    .font(.caption).foregroundStyle(.secondary)
+                // The frame itself sits behind the viewport, so the target is chosen by looking at what is
+                // there rather than at an empty box. The picture is the whole frame, never the zoomed view,
+                // which is what makes the rectangle mean something.
                 GeometryReader { geo in
-                    ZStack {
-                        RoundedRectangle(cornerRadius:8).fill(.white.opacity(0.07))
-                        Path { p in p.move(to:CGPoint(x:0,y:geo.size.height/2));p.addLine(to:CGPoint(x:geo.size.width,y:geo.size.height/2));p.move(to:CGPoint(x:geo.size.width/2,y:0));p.addLine(to:CGPoint(x:geo.size.width/2,y:geo.size.height)) }.stroke(.white.opacity(0.15))
-                        RoundedRectangle(cornerRadius:3).stroke(accent,lineWidth:2)
-                            .frame(width:geo.size.width/zoom.scale,height:geo.size.height/zoom.scale)
-                            .position(x:geo.size.width*zoom.x,y:geo.size.height*zoom.y)
-                    }.clipped().contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0).onChanged { v in
-                        studio.update(\.zooms,id:id) { $0.follow=false;$0.x=min(1,max(0,v.location.x/geo.size.width));$0.y=min(1,max(0,v.location.y/geo.size.height)) }
+                    let scale=max(1,zoom.scale)
+                    let box=CGSize(width:geo.size.width/scale,height:geo.size.height/scale)
+                    let centre=CGPoint(x:geo.size.width*min(1,max(0,zoom.x)),y:geo.size.height*min(1,max(0,zoom.y)))
+                    ZStack(alignment:.topLeading) {
+                        RoundedRectangle(cornerRadius:8).fill(.black.opacity(0.35))
+                        if let frame=studio.thumbnail(atTimeline:zoom.start) {
+                            Image(nsImage:frame).resizable().aspectRatio(contentMode:.fill)
+                                .frame(width:geo.size.width,height:geo.size.height).clipped().opacity(0.85)
+                        }
+                        Rectangle().fill(.black.opacity(0.42))
+                        // The part the zoom will show is left unshaded.
+                        Rectangle().blendMode(.destinationOut)
+                            .frame(width:box.width,height:box.height).position(centre)
+                        Rectangle().stroke(accent,lineWidth:2)
+                            .frame(width:box.width,height:box.height).position(centre)
+                        Circle().fill(accent).frame(width:11,height:11)
+                            .position(x:centre.x+box.width/2,y:centre.y+box.height/2)
+                            .gesture(DragGesture(minimumDistance:0).onChanged { value in
+                                let reach=max(max(abs(value.location.x-centre.x)/max(1,geo.size.width),
+                                                  abs(value.location.y-centre.y)/max(1,geo.size.height)),0.04)
+                                studio.update(\.zooms,id:id) { $0.scale=min(6,max(1,0.5/reach)) }
+                            })
+                    }.compositingGroup().clipShape(RoundedRectangle(cornerRadius:8))
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance:0).onChanged { value in
+                        studio.update(\.zooms,id:id) { $0.follow=false
+                            $0.x=min(1,max(0,value.location.x/geo.size.width));$0.y=min(1,max(0,value.location.y/geo.size.height)) }
                     })
-                }.frame(height:125)
+                }.frame(height:150)
                 field("Start (s)",value:studio.binding(\.zooms,id:id,\.start,fallback:zoom.start,clamp:{ [weak studio] in max(0,min($0,(studio?.zooms.first{$0.id == id}?.end ?? 0)-0.1)) }))
                 field("End (s)",value:studio.binding(\.zooms,id:id,\.end,fallback:zoom.end,clamp:{ [weak studio] in min(studio?.duration ?? 0,max($0,(studio?.zooms.first{$0.id == id}?.start ?? 0)+0.1)) }))
                 Text(String(format:"Scale · %.2f×",zoom.scale)).font(.caption)

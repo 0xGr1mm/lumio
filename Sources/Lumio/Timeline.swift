@@ -13,7 +13,6 @@ struct TimelineEditor:View {
     var selectMarker:()->Void={}
     var selectAnnotation:()->Void={}
     @State var magnification=1.0
-    @State var thumbnails:[String:[NSImage]]=[:]
     @State var showCursor=false
     @State var showZoom=true
     @State var showAudio=true
@@ -333,29 +332,39 @@ struct TimelineEditor:View {
         }.frame(height:35).background(Color.green.opacity(0.03)).contentShape(Rectangle()).gesture(seekGesture(width:width))
     }
     func seekGesture(width:Double)->some Gesture { DragGesture(minimumDistance:0).onChanged { v in studio.position=max(0,min(studio.duration,v.location.x/width*studio.duration));studio.seek(studio.position) } }
-    /// Twelve frames for the opened recording and for every recording added to the project, keyed by file path.
-    func makeThumbs() async {
-        thumbnails=[:];guard let source=studio.source,studio.stillImage == nil else{return}
-        var files:[(key:String,url:URL,length:Double)]=[("",source,studio.sourceDuration)]
-        files+=studio.addedSources.map { (key:$0.key,url:URL(fileURLWithPath:$0.key),length:$0.value) }
+    func makeThumbs() async { await studio.loadThumbnails() }
+    /// The thumbnail nearest a source time in the file a clip plays, so a clip shows a filmstrip of what it contains.
+    func thumbnail(at sourceTime:Double,source:String?)->NSImage? { studio.thumbnail(atSource:sourceTime,file:source) }
+}
+
+@MainActor extension Studio {
+    /// Twelve frames for the opened recording and for every recording added to the project, keyed by file
+    /// path. They belong to the studio rather than to the timeline because the zoom picker shows them too.
+    func loadThumbnails() async {
+        timelineThumbnails=[:];guard let source,stillImage == nil else{return}
+        var files:[(key:String,url:URL,length:Double)]=[("",source,sourceDuration)]
+        files+=addedSources.map { (key:$0.key,url:URL(fileURLWithPath:$0.key),length:$0.value) }
         for file in files {
-            let generator=AVAssetImageGenerator(asset:AVURLAsset(url:file.url));generator.appliesPreferredTrackTransform=true;generator.maximumSize=CGSize(width:200,height:120)
+            let generator=AVAssetImageGenerator(asset:AVURLAsset(url:file.url));generator.appliesPreferredTrackTransform=true;generator.maximumSize=CGSize(width:320,height:200)
             var frames:[NSImage]=[]
-            for i in 0..<12 {
+            for index in 0..<12 {
                 if Task.isCancelled{return}
-                if let result=try? await generator.image(at:CMTime(seconds:file.length*Double(i)/12,preferredTimescale:600)) { frames.append(NSImage(cgImage:result.image,size:.zero)) }
+                if let result=try? await generator.image(at:CMTime(seconds:file.length*Double(index)/12,preferredTimescale:600)) { frames.append(NSImage(cgImage:result.image,size:.zero)) }
             }
-            thumbnails[file.key]=frames
+            timelineThumbnails[file.key]=frames
             if Task.isCancelled{return}
         }
     }
-    /// The thumbnail nearest a source time in the file a clip plays, so a clip shows a filmstrip of what it contains.
-    func thumbnail(at sourceTime:Double,source:String?)->NSImage? {
-        let frames=thumbnails[source ?? ""] ?? []
-        let length=source.flatMap { studio.addedSources[$0] } ?? studio.sourceDuration
+    func thumbnail(atSource sourceTime:Double,file:String?)->NSImage? {
+        let frames=timelineThumbnails[file ?? ""] ?? []
+        let length=file.flatMap { addedSources[$0] } ?? sourceDuration
         guard !frames.isEmpty,length>0 else{return nil}
-        let index=max(0,min(frames.count-1,Int(sourceTime/length*Double(frames.count))))
-        return frames[index]
+        return frames[max(0,min(frames.count-1,Int(sourceTime/length*Double(frames.count))))]
+    }
+    /// The frame the timeline is showing at a moment, for a panel that wants to display what is on screen.
+    func thumbnail(atTimeline time:Double)->NSImage? {
+        guard let placement=placement(containing:max(0,min(duration-0.01,time))) ?? clipPlacements.first else { return thumbnail(atSource:time,file:nil) }
+        return thumbnail(atSource:placement.clip.sourceTime(forTimeline:time),file:placement.clip.source)
     }
 }
 

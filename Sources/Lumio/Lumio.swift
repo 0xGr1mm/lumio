@@ -65,6 +65,7 @@ func captureEncoding(width:Int,height:Int,preferHEVC:Bool,available:[AVVideoCode
     /// In and out points: when both are set, only that stretch is exported.
     @Published var exportStart:Double?
     @Published var exportEnd:Double?
+    @Published var timelineThumbnails:[String:[NSImage]]=[:]
     @Published var toast:String?
     var toastTask:Task<Void,Never>?
     @Published var cleanupScanning=false
