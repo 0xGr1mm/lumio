@@ -102,6 +102,22 @@ import Foundation
     // Handing the spring a stepped goal measures about 2500 per s³ here; the eased goal has to stay far
     // below that, because the opening yank is the part of the move that reads as abrupt.
     try require(focused.jerk<700 && fluid.jerk<700,"the camera starts too sharply: \(focused.jerk) / \(fluid.jerk) per s³")
+    // Clicks spaced so that their zooms almost touch must not make the view bounce out and back in.
+    var pumping=MotionSettings()
+    let clicks=[0.6,3.4,6.0].map { at in PointerSample(time:at,x:0.3,y:0.4,pressed:true,shape:"arrow",clickEdge:true) }
+    var pumpTrace:[PointerSample]=[]
+    var tick=0.0
+    while tick<8 {
+        if let click=clicks.first(where:{ abs($0.time-tick)<0.009 }) { pumpTrace.append(click) }
+        else { pumpTrace.append(PointerSample(time:tick,x:0.3,y:0.4,pressed:false)) }
+        tick+=1/60
+    }
+    let automaticZooms=autoZoomClips(samples:pumpTrace,settings:pumping,duration:8)
+    for pair in zip(automaticZooms,automaticZooms.dropFirst()) {
+        try require(pair.1.start-pair.0.end>=0.8-0.0001,"two automatic zooms sit \(pair.1.start-pair.0.end) s apart, which pumps the view out and back in")
+    }
+    pumping.autoZoom=false
+    try require(autoZoomClips(samples:pumpTrace,settings:pumping,duration:8).isEmpty,"automatic zooms were planned with the feature off")
     return [String(format:"PASS camera leaves %.0f/%.0f ms early and completes the move in %.2f/%.2f s with no overshoot, peak jerk %.0f/%.0f per s³ (focused/fluid)",
                    -focused.lead*1000,-fluid.lead*1000,focusedMove,fluidMove,focused.jerk,fluid.jerk),
             "PASS region camera stays steady and motion agrees across 30/120 Hz recording traces",

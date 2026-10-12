@@ -170,8 +170,11 @@ func autoZoomClips(samples:[PointerSample],settings:MotionSettings,duration:Doub
         flush()
     }
     var clips:[ZoomClip]=[]
+    // Two zooms with a short gap between them pull the view out and push it straight back in, which reads
+    // as pumping rather than as two separate moves. Below this gap they are held as one.
+    let shortestGap=0.8
     for event in events.sorted(by:{$0.start<$1.start}) where event.end-event.start>=0.1 {
-        if let i=clips.indices.last,event.start<clips[i].end {
+        if let i=clips.indices.last,event.start<clips[i].end+shortestGap {
             clips[i].end=max(clips[i].end,event.end)
             if event.follow ?? true { clips[i].follow=nil }
         } else { clips.append(event) }
