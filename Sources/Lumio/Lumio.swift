@@ -8,6 +8,17 @@ import UniformTypeIdentifiers
 /// enough to carry white text, which the old lime was not.
 let accent = Color(red: 0.18, green: 0.53, blue: 0.99)
 let panel = Color(white: 0.105)
+
+/// A brand image from the app bundle, at the size it will be drawn. Returns nil when the Brand folder
+/// is not installed, so every caller can fall back to a symbol rather than showing an empty box.
+/// A template image is drawn as a shape and tinted by the system, which is what the menu bar expects.
+@MainActor func brandImage(_ name: String, size: Double, template: Bool = false) -> NSImage? {
+    guard let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Brand"),
+          let image = NSImage(contentsOf: url) else { return nil }
+    image.size = NSSize(width: size, height: size)
+    image.isTemplate = template
+    return image
+}
 func stamp(_ value: Double) -> String { let n = Int(max(0, value.isFinite ? value : 0)); return String(format: "%02d:%02d", n / 60, n % 60) }
 
 /// H.264 hardware encoders stop at 4096 pixels, so larger captures use HEVC or are scaled down.

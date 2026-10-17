@@ -12,14 +12,14 @@ swift build --disable-sandbox -c release
 python3 scripts/generate-audio.py
 mkdir -p "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/MacOS "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources
 if [ -z "${LUMIO_TEST_BUILD:-}" ]; then
-  # The icon is only redrawn when its generator is present; otherwise the one in Resources is used as is.
-  if [ -f scripts/round-icon.py ]; then ./scripts/build-icon.sh; fi
+  ./scripts/build-icon.sh
   cp Resources/Lumio.icns "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Lumio.icns
 fi
 # LUMIO_TEST_BUILD=1 leaves the heavy artwork out: it is only for running the verification suite locally,
 # and copying it stalls while the files are still coming back from iCloud.
 if [ -d Resources/Wallpapers ] && [ -z "${LUMIO_TEST_BUILD:-}" ]; then ditto Resources/Wallpapers "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Wallpapers; fi
 if [ -d Resources/Cursors ] && [ -z "${LUMIO_TEST_BUILD:-}" ]; then ditto Resources/Cursors "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Cursors; fi
+if [ -d Resources/Brand ]; then ditto Resources/Brand "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Brand; fi
 if [ -d Resources/Audio ]; then ditto Resources/Audio "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Resources/Audio; fi
 cp .build/release/Lumio "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/MacOS/Lumio
 cat > "$HOME/Library/Caches/Lumio/Build.noindex/Lumio.app"/Contents/Info.plist <<'PLIST'

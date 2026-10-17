@@ -61,7 +61,8 @@ struct Editor: View {
     }
     var header:some View {
         HStack(spacing:10) {
-            Image(systemName:"record.circle").foregroundStyle(accent).font(.system(size:22))
+            if let mark=brandImage("mark",size:26) { Image(nsImage:mark).accessibilityHidden(true) }
+            else { Image(systemName:"record.circle").foregroundStyle(accent).font(.system(size:22)) }
             Text("Lumio").font(.system(size:20,weight:.semibold,design:.rounded))
             Divider().frame(height:20).padding(.horizontal,6)
             Button { tab="Versions" } label:{Image(systemName:"square.stack.3d.up")}.help("Version Shelf").accessibilityLabel("Version Shelf")

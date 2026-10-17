@@ -1,12 +1,16 @@
 #!/bin/sh
+# Rebuilds Resources/Lumio.icns and the in-app brand images from the approved masters.
+# Skipped when the icon is already newer than the master it came from.
 set -eu
 cd "$(dirname "$0")/.."
-rm -rf .build/Lumio.iconset
-mkdir -p .build/Lumio.iconset
-python3 scripts/round-icon.py
-for size in 16 32 128 256 512; do
-    sips -z "$size" "$size" .build/Lumio-rounded.png --out ".build/Lumio.iconset/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z "$double" "$double" .build/Lumio-rounded.png --out ".build/Lumio.iconset/icon_${size}x${size}@2x.png" >/dev/null
-done
+MASTER=Design/logo-concepts/lumio-blue-concept-v1.png
+if [ ! -f "$MASTER" ]; then
+  echo "no brand master; keeping the icon that is already in Resources"
+  exit 0
+fi
+if [ -f Resources/Lumio.icns ] && [ Resources/Lumio.icns -nt "$MASTER" ] && [ Resources/Brand/mark.png -nt "$MASTER" ]; then
+  exit 0
+fi
+swift scripts/make-brand.swift .
 iconutil -c icns .build/Lumio.iconset -o Resources/Lumio.icns
+echo "icon and brand images rebuilt"

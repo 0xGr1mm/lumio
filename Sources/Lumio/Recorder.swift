@@ -103,7 +103,11 @@ struct RecorderPreferences: Codable {
         recorder.contentView = NSHostingView(rootView:RecorderBar(studio:studio))
         recorder.isReleasedWhenClosed = false
         statusItem = NSStatusBar.system.statusItem(withLength:NSStatusItem.squareLength)
-        statusItem?.button?.image = NSImage(systemSymbolName:"record.circle",accessibilityDescription:"Lumio")
+        // The menu bar takes a shape, not a picture: the same geometry as the app icon, flat, so macOS can
+        // tint it for a light bar, a dark bar and a highlighted one.
+        statusItem?.button?.image = brandImage("menubar",size:18,template:true)
+            ?? NSImage(systemSymbolName:"record.circle",accessibilityDescription:"Lumio")
+        statusItem?.button?.image?.accessibilityDescription = "Lumio"
         statusItem?.button?.target = self; statusItem?.button?.action = #selector(statusPressed)
         installMenu()
         installEditorKeys()
@@ -332,6 +336,7 @@ struct RecorderBar: View {
     var body:some View {
         HStack(spacing:14) {
             Button { studio.cameraRecorder.stopSession(); studio.onCameraPreviewChanged?(false); NSApp.hide(nil) } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.gray) }.help("Hide; reopen from the menu bar")
+            if let mark=brandImage("mark",size:22) { Image(nsImage:mark).accessibilityLabel("Lumio") }
             Divider().frame(height:34)
             if studio.recording || studio.countdownRemaining > 0 {
                 Circle().fill(studio.pausedAt == nil ? Color.red : Color.orange).frame(width:10,height:10)

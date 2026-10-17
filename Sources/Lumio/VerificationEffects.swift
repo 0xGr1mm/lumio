@@ -14,6 +14,18 @@ import Foundation
     func effectsFailure(_ text:String)->NSError { NSError(domain:"Lumio",code:97,userInfo:[NSLocalizedDescriptionKey:text]) }
     let context=CIContext(options:[.workingColorSpace:NSNull()])
     let width=640,height=360
+    /// How different two frames are across a band of rows, averaged over its channels. The sample clip
+    /// keeps its middle deliberately flat so the colour checks can read it, so a whole-frame average is
+    /// the wrong instrument for anything that moves the picture: it measures mostly unchanging ground.
+    func bandDistance(_ a:[UInt8],_ b:[UInt8],fromRow:Int,toRow:Int)->Double {
+        var total=0.0,count=0.0
+        for row in max(0,fromRow)..<min(height,toRow) { for column in 0..<width {
+            let index=(row*width+column)*4
+            guard index+2<min(a.count,b.count) else { continue }
+            total+=abs(Double(a[index])-Double(b[index]))+abs(Double(a[index+1])-Double(b[index+1]))+abs(Double(a[index+2])-Double(b[index+2]));count+=3
+        } }
+        return count>0 ? total/count:0
+    }
     /// How different two frames are inside one rectangle, averaged over its channels.
     func patchDistance(_ a:[UInt8],_ b:[UInt8],x:Int,y:Int,size:Int)->Double {
         var total=0.0,count=0.0
@@ -212,12 +224,21 @@ import Foundation
     punchStudio.motion.punchOnCut=90
     let punched=try await framePixels(punchStudio,at:1.6)
     let settledAfter=try await framePixels(punchStudio,at:2.2)
-    guard looksDistance(flat,punched)>2 else { throw effectsFailure("the punch did not reach the picture: \(looksDistance(flat,punched))") }
+    // Measured where the clip actually has detail: the band the moving bar crosses.
+    // The strongest row rather than the whole frame: the sample clip keeps its middle flat on purpose so
+    // the colour checks can read it, and averaging over all that unchanging ground buries the move.
+    func strongestRow(_ a:[UInt8],_ b:[UInt8])->Double {
+        var worst=0.0
+        for row in 0..<height { worst=max(worst,bandDistance(a,b,fromRow:row,toRow:row+1)) }
+        return worst
+    }
+    let punchReach=strongestRow(flat,punched)
+    guard punchReach>1.5 else { throw effectsFailure("the punch did not reach the picture: \(punchReach)") }
     let quiet=try await framePixels(punchStudio,at:2.2)
     punchStudio.motion.punchOnCut=0
     let quietFlat=try await framePixels(punchStudio,at:2.2)
-    guard looksDistance(quiet,quietFlat)<1,looksDistance(settledAfter,quietFlat)<1 else {
-        throw effectsFailure("the punch is still there after it should have eased out: \(looksDistance(quiet,quietFlat))") }
+    guard strongestRow(quiet,quietFlat)<0.5,strongestRow(settledAfter,quietFlat)<0.5 else {
+        throw effectsFailure("the punch is still there after it should have eased out: \(strongestRow(quiet,quietFlat))") }
     punchStudio.previewTask?.cancel()
     lines.append("PASS a cut punches in and eases back out, and no punch is made where a zoom is already running")
 
