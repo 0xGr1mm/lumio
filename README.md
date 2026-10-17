@@ -1,4 +1,6 @@
-# Lumio 0.14.2
+# Lumio
+
+<img src="Resources/Brand/mark.png" alt="" width="96">
 
 Lumio is a local macOS 15+ screen recorder and editor built with SwiftUI, ScreenCaptureKit and
 AVFoundation. Everything runs on the machine it is installed on: there is no hosted service, no account
