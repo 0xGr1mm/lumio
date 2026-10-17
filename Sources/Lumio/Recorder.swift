@@ -386,6 +386,14 @@ struct RecorderBar: View {
         .popover(isPresented:$studio.captureSheet,arrowEdge:.top) { targetPicker }
         .alert("Lumio",isPresented:Binding(get:{ studio.message != nil },set:{ if !$0 { studio.message = nil } })) { Button("OK") { studio.message = nil } } message: { Text(studio.message ?? "") }
     }
+    /// Why recording cannot start yet, in the user's words, or nil when it can.
+    var startBlocker:String? {
+        if studio.busy { return "Finishing the last recording…" }
+        if studio.mode == "Area",studio.area == nil { return "Draw the area you want to record first." }
+        if studio.mode == "Window",studio.windows.isEmpty { return "No window is open to record." }
+        if studio.mode == "Device" { return studio.mobileDevices.isEmpty ? "Connect an iPhone or iPad with a cable.":nil }
+        return studio.displays.isEmpty ? "No screen is available to record.":nil
+    }
     var cameraBinding: Binding<Bool> {
         Binding(get:{ studio.camera },set:{ value in studio.camera = value; Task { await studio.prepareCameraPreview() } })
     }
@@ -438,8 +446,20 @@ struct RecorderBar: View {
                 if !studio.systemAudio && !studio.mic { Text("The video will be recorded without audio.").font(.caption).foregroundStyle(.secondary) }
             }
             Text("\(studio.preferences.fps) fps · \(studio.preferences.countdown) s countdown · Stop ⌃⌥S · Pause ⌃⌥P").font(.system(size:12)).foregroundStyle(.secondary)
-            Button { Task { if screenshot { await studio.takeScreenshot() } else { await studio.startRecording() } } } label: { Text(screenshot ? "Capture" : "Start Recording").frame(maxWidth:.infinity).padding(7).foregroundStyle(.white) }.buttonStyle(.borderedProminent)
-                .disabled(studio.busy || (studio.mode == "Area" && studio.area == nil) || (studio.mode == "Window" && studio.windows.isEmpty) || (studio.mode == "Device" ? studio.mobileDevices.isEmpty : studio.displays.isEmpty))
+            // The button carries its own colour in both states. Left to the system, a disabled prominent
+            // button on this dark panel comes out almost black, which reads as broken rather than as
+            // waiting for something — and it never said what it was waiting for.
+            let blocker=startBlocker
+            Button { Task { if screenshot { await studio.takeScreenshot() } else { await studio.startRecording() } } } label: {
+                Text(screenshot ? "Capture" : "Start Recording")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth:.infinity).padding(.vertical,9)
+                    .foregroundStyle(blocker == nil ? Color.white:Color.white.opacity(0.5))
+                    .background(blocker == nil ? accent:accent.opacity(0.3))
+                    .clipShape(RoundedRectangle(cornerRadius:8))
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain).disabled(blocker != nil)
+            if let blocker { Text(blocker).font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity) }
         }.padding(22).frame(width:380).preferredColorScheme(.dark).tint(accent)
     }
     var devicePicker:some View {
