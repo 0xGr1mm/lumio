@@ -1,6 +1,13 @@
 .build/
+.build-eski-yollar/
 .DS_Store
 *.mov
 *.mp4
+
+# Artwork that belongs to other people. The attribution files next to these folders say where each
+# piece came from and on what terms; the files themselves are not redistributed here. Lumio runs
+# without them and simply does not offer those cursor styles or wallpapers.
 Resources/Wallpapers/
 Resources/Audio/
+Resources/Cursors/CustomCursor/*.png
+Resources/Cursors/Magnific/*.jpg

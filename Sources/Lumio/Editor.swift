@@ -86,7 +86,7 @@ struct Editor: View {
                 Button("Cancel") { studio.cancelExport() }.disabled(studio.exportTask == nil)
             }
             Button { studio.startExport() } label: { Label(studio.exportRange == nil ? "Export":"Export Selection",systemImage:"square.and.arrow.up") }
-                .buttonStyle(.borderedProminent).foregroundStyle(.black).disabled(studio.source == nil || studio.busy).help(exportButtonTitle)
+                .buttonStyle(.borderedProminent).foregroundStyle(.white).disabled(studio.source == nil || studio.busy).help(exportButtonTitle)
             Menu {
                 Menu("Made for…") {
                     ForEach(exportPresets) { preset in

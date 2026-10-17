@@ -3,7 +3,10 @@ import AVKit
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
-let accent = Color(red: 0.75, green: 0.93, blue: 0.39)
+/// Blue reads as the least surprising accent there is: it tops colour-preference surveys in every
+/// country they are run in, and it is macOS's own accent, so it arrives already familiar. It is dark
+/// enough to carry white text, which the old lime was not.
+let accent = Color(red: 0.18, green: 0.53, blue: 0.99)
 let panel = Color(white: 0.105)
 func stamp(_ value: Double) -> String { let n = Int(max(0, value.isFinite ? value : 0)); return String(format: "%02d:%02d", n / 60, n % 60) }
 

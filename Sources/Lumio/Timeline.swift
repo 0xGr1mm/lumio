@@ -120,7 +120,7 @@ struct TimelineEditor:View {
     func toolButton(_ tool:String,_ key:String,_ icon:String)->some View {
         Button {studio.timelineTool=tool} label:{
             HStack(spacing:5) {Image(systemName:icon);Text(key).font(.system(size:9,weight:.bold,design:.monospaced))}
-                .foregroundStyle(studio.timelineTool == tool ? .black:.primary).padding(.horizontal,7).padding(.vertical,5)
+                .foregroundStyle(studio.timelineTool == tool ? .white:.primary).padding(.horizontal,7).padding(.vertical,5)
                 .background(studio.timelineTool == tool ? accent:Color.white.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius:6))
         }.help(tool == "blade" ? "Blade Tool · C or B":tool.capitalized)
     }

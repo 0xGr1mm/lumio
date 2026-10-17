@@ -101,7 +101,7 @@ struct Look: Codable, Equatable {
     var progressBar: Double? = nil
     var progressColor: RGB? = nil
     var resolvedProgressBar: Double { let value=progressBar ?? 0;return value.isFinite ? max(0,min(40,value)):0 }
-    var resolvedProgressColor: RGB { (progressColor ?? RGB(0xBFEE63)).normalized() }
+    var resolvedProgressColor: RGB { (progressColor ?? RGB(0x2E87FC)).normalized() }
     /// Seconds of fade from and to black at the two ends of the finished video, picture and sound together.
     var fadeIn: Double? = nil
     var fadeOut: Double? = nil

@@ -1,13 +1,67 @@
 # Lumio 0.14.2
 
-Lumio is a local macOS 15+ screen recorder and editor built with SwiftUI, ScreenCaptureKit and AVFoundation. It uses original source and interface assets and has no hosted service or runtime package dependency.
+Lumio is a local macOS 15+ screen recorder and editor built with SwiftUI, ScreenCaptureKit and
+AVFoundation. Everything runs on the machine it is installed on: there is no hosted service, no account
+and no runtime package dependency. The source here is the whole application.
 
 ## Build and install
 
+Requirements: macOS 15 or newer, Xcode Command Line Tools, Python 3 (used by the build scripts).
+
 ```sh
-./scripts/install.sh
+./scripts/install.sh      # builds, signs and copies to /Applications
 open /Applications/Lumio.app
 ```
+
+`scripts/build.sh` alone builds into `~/Library/Caches/Lumio/Build.noindex` without installing.
+
+On macOS 26 and newer the SwiftUI macro plugin that `@State` needs ships with Xcode rather than with the
+Command Line Tools. When it is missing the build falls back to the previous SDK automatically; nothing
+needs to be set by hand.
+
+### Signing, and why it matters here
+
+The build signs the app so that macOS keeps the screen-recording, camera and microphone permission you
+granted. Without a certificate it signs ad hoc, which works but changes the app's identity on every
+build, so the permissions have to be granted again each time. To make a local certificate once:
+
+```sh
+# Keychain Access → Certificate Assistant → Create a Certificate…
+#   Name: Lumio Local Code Signing   Type: Code Signing   Self-signed
+# then put the keychain and its password in ~/Library/Application Support/Lumio/Signing
+```
+
+### Artwork that is not in this repository
+
+Some things Lumio can draw with are other people's work and are not redistributed here:
+
+- `Resources/Cursors/Magnific/` — stock cursor vectors, attribution and sources in the folder's
+  `MAGNIFIC-ATTRIBUTION.md`.
+- `Resources/Cursors/CustomCursor/` — fan-art cursor packs; the sources and the rights holders are
+  listed in `CUSTOM-CURSOR-SOURCES.md`.
+- `Resources/Wallpapers/` and `Resources/Audio/` — background images and the bundled music beds
+  (`scripts/generate-audio.py` regenerates the music, which is synthesised rather than sampled).
+
+Lumio builds and runs without any of them; those cursor styles simply fall back to the drawn cursors and
+the wallpaper picker is empty. Drop your own files into those folders to fill them.
+
+## Tests
+
+```sh
+./scripts/build.sh
+APP=~/Library/Caches/Lumio/Build.noindex/Lumio.app/Contents/MacOS/Lumio
+mkdir -p /tmp/lumio-check && "$APP" --make-sample /tmp/lumio-check   # writes the one input the suite needs
+"$APP" --verify /tmp/lumio-check                                     # ~95 checks, exits non-zero on failure
+```
+
+The suite renders and reads back real frames, so it catches what unit tests on their own would not. Other
+entry points: `--verify-live` (preview latency), `--verify-focus`, `--verify-editing`, `--verify-effects`,
+`--verify-privacy`, and `--verify-stress` with `LUMIO_STRESS_SEED` / `LUMIO_STRESS_STEPS` for a seeded run
+of random edits.
+
+## Licence
+
+MIT, see `LICENSE`. The artwork listed above is not covered by it and belongs to its own rights holders.
 
 Lumio opens with a draggable capture bar and remains available from its menu bar icon. It records a display, window or selected region at 30/60 fps with optional system audio, a selected microphone and a camera, or the screen of an iPhone or iPad connected by cable. Captures and screenshots open directly in the editor.
 
@@ -97,7 +151,9 @@ say -o /tmp/lumio-verify/speech.aiff "This short recording checks captions."
 
 ## Stable local installation
 
-Launch Lumio from `/Applications/Lumio.app`. Quit it and rerun `./scripts/install.sh` to update. `scripts/sign.py` uses the stable local certificate in `~/Library/Application Support/Lumio/Signing`; macOS permission identity depends on keeping that keychain in place. The private key is not stored in this source folder.
+Launch Lumio from `/Applications/Lumio.app`. Quit it and rerun `./scripts/install.sh` to update. `scripts/sign.py` uses the local certificate in `~/Library/Application Support/Lumio/Signing` when one is
+there and signs ad hoc when it is not; macOS permission identity depends on keeping that keychain in
+place. The private key is not stored in this source folder.
 
 ## Version Shelf
 

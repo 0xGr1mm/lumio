@@ -433,7 +433,7 @@ struct RecorderBar: View {
                 if !studio.systemAudio && !studio.mic { Text("The video will be recorded without audio.").font(.caption).foregroundStyle(.secondary) }
             }
             Text("\(studio.preferences.fps) fps · \(studio.preferences.countdown) s countdown · Stop ⌃⌥S · Pause ⌃⌥P").font(.system(size:12)).foregroundStyle(.secondary)
-            Button { Task { if screenshot { await studio.takeScreenshot() } else { await studio.startRecording() } } } label: { Text(screenshot ? "Capture" : "Start Recording").frame(maxWidth:.infinity).padding(7).foregroundStyle(.black) }.buttonStyle(.borderedProminent)
+            Button { Task { if screenshot { await studio.takeScreenshot() } else { await studio.startRecording() } } } label: { Text(screenshot ? "Capture" : "Start Recording").frame(maxWidth:.infinity).padding(7).foregroundStyle(.white) }.buttonStyle(.borderedProminent)
                 .disabled(studio.busy || (studio.mode == "Area" && studio.area == nil) || (studio.mode == "Window" && studio.windows.isEmpty) || (studio.mode == "Device" ? studio.mobileDevices.isEmpty : studio.displays.isEmpty))
         }.padding(22).frame(width:380).preferredColorScheme(.dark).tint(accent)
     }

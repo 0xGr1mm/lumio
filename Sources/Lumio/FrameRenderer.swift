@@ -91,7 +91,7 @@ struct FrameDesign {
     var handleOpacity:Double=1
     /// Height in canvas pixels of the bar that fills as the video plays, and its colour. Zero for none.
     var progressHeight:Double=0
-    var progressColor:RGB=RGB(0xBFEE63)
+    var progressColor:RGB=RGB(0x2E87FC)
 }
 /// One cross dissolve: when it begins, how long it lasts, and which track carries the incoming clip.
 struct DissolveSpan {
